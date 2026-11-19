@@ -4,9 +4,43 @@ Turns an architect's blueprint set into a Blender model that lands in Unreal Eng
 
 It works the way a careful person would: read the drawings into a plain-text description of the building first, argue with that text until it matches the sheets, then build geometry from the text. The sheets are allowed to be vague. The geometry is not.
 
-![Pavilion A, built from the hand-written spec](docs/images/pavilion-a.jpg)
+![The example house, built from the hand-written spec](docs/images/house.jpg)
 
-*Pavilion A of the example house: hexagonal and half glass, with a stone arc and a conical shingle roof. It was generated from [`pavilion_a.yaml`](projects/example-house/pavilion_a.yaml) and rendered headless in Blender 5.2. The four columns, three doors and twenty-three conical-roof rafters are instances of one mesh each.*
+*The example house, generated from [`house.yaml`](projects/example-house/house.yaml) and rendered headless in Blender 5.2: six pavilions, a stair tower, the music room wall, two round cores and the glazed links between them. 65 unique meshes, 232 placements.*
+
+## Phase 1 status: the whole house, checked against the drawings
+
+Phase 1 models the whole house from a hand-written spec. Its gate is that the model's outlines agree with the drawings and the house can be walked in Unreal. The first half needs no Unreal, and is mostly done for the foundation plan:
+
+| Item | Status |
+| --- | --- |
+| Every pavilion center placed from the dimension chains | Done: 6 of 9 center points are dimensioned, 3 measured |
+| All ten dimension chains on the foundation plan close | Done, with two readings settled by the fit (below) |
+| Photo of the plan fitted to the model | Done: 22 points, 1.3" mean residual, 2.6" worst |
+| Model drawn over the straightened plan and scored | Done: 94% of column outline, 86% of glazing and 72% of wall outline lands on ink |
+| Roofs between pavilions, music room roof, interior walls | Not yet: needs the floor plan, detail D-2 or sharper scans |
+| Outlines checked against the elevations | Not yet |
+| Walk it in Unreal | Waiting for a machine with Unreal |
+
+<table><tr>
+<td><img src="docs/images/foundation-overlay.jpg" alt="The model drawn over the straightened foundation plan"></td>
+<td><img src="docs/images/house-top.jpg" alt="Top view of the model"></td>
+</tr><tr>
+<td><em>The model over the straightened foundation plan: walls red, columns blue, glazing green, center points orange.</em></td>
+<td><em>The model from straight above, same orientation.</em></td>
+</tr></table>
+
+### How the plan is read
+
+The photo is fitted to the model, not the other way round. [`foundation-plan.calib.yaml`](projects/example-house/sheets/foundation-plan.calib.yaml) lists the pixel positions of 22 named points: center points and columns. Their plan positions come from the spec, so the fit's residuals measure how well spec and drawing agree. The fitted photo is then straightened into plan coordinates, and the model is drawn over it.
+
+That loop settled three readings the photo alone could not:
+
+- **The right chain's "3'-6"" is 3'-5".** That closes its 11'-8" chain, and 3'-5" is half the small hexagon's side.
+- **The left chain's "11'-4"" is 11'-8".** The fitted plan measures the round core within ½" of 11'-8"; 11'-4" misses by 3½".
+- **The 8'-0" and 11'-8" arc radii are to the face of the 12" block.** The stone facing sits outside the block. The living room and music room arcs are not lettered; they measure 12'-4" and 8'-6".
+
+The glass link between the two north pavilions is lettered 5'-0". The model gets 5'-0" from the pavilion centers and sides alone.
 
 ## Phase 0 status
 
@@ -28,10 +62,12 @@ Python 3.13 on Linux x86-64, Windows or Apple silicon. Those are the platforms w
 
 ```bash
 python3.13 -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev,blender]"        # bpy is ~400 MB
-aw build projects/example-house/pavilion_a.yaml --preview
+pip install -e ".[dev,blender,sheets]"   # bpy is ~400 MB; sheets adds OpenCV
+aw build projects/example-house/house.yaml --preview
 pytest -q
 ```
+
+`pavilion_a.yaml` is the phase 0 spec, a single pavilion. `house.yaml` is the whole house.
 
 Without the `bpy` wheel, point `BLENDER` at a Blender 5.2 LTS binary. The Blender step only needs Blender's own Python:
 
@@ -39,7 +75,7 @@ Without the `bpy` wheel, point `BLENDER` at a Blender 5.2 LTS binary. The Blende
 BLENDER=/path/to/blender aw build projects/example-house/pavilion_a.yaml
 ```
 
-Output lands in `projects/example-house/out/pavilion_a/`:
+Output lands in `projects/example-house/out/<spec name>/`:
 
 | File | What it is |
 | --- | --- |
@@ -50,6 +86,8 @@ Output lands in `projects/example-house/out/pavilion_a/`:
 | `unreal/import_unreal.py`, `unreal/check_import.py` | Import into the open level, then test it |
 | `preview/example-house.glb`, `.png` | Quick look without Blender or Unreal |
 | `blender_report.json` | Export mode, file hashes, re-import results, FBX header |
+| `sheets/*.overlay.jpg`, `*.check.json` | The model over each calibrated sheet, and the agreement scores |
+| `sheets/*.rectified.png` | The sheet straightened into plan coordinates; also a reference plane in the `.blend` |
 
 ## In Unreal
 
@@ -81,7 +119,8 @@ sheets ──► Building Spec (YAML) ──► resolve ──► resolved.json 
 ```
 
 - **`src/architectworks/spec/`**: the schema. Lengths are written as on the drawings (`7'-7 3/4"`) and parsed to exact fractions, so sums of dimension strings close exactly. Every value carries `src`: sheet, basis and the words on the sheet. Basis ranks dimensioned > rule > measured > assumed.
-- **`src/architectworks/resolve/`**: patterns expand into placed components. `radial_pavilion` turns one entry into columns, headers, doors, walls, slab, roof, rafters, ring and skylight. Every mesh is built and checked (closed, positive volume, planar faces, convex hulls) in plain Python.
+- **`src/architectworks/resolve/`**: patterns expand into placed components. `radial_pavilion` turns one entry into columns, headers, doors, stone arcs, roof, rafters, ring and skylight. `stone_ring`, `round_mass` and `link` cover towers, cores and the walls between named points. Slabs are one per floor level, unioned from every element's footprint. Every mesh is built and checked (closed, positive volume, planar faces, convex hulls) in plain Python.
+- **`src/architectworks/sheets.py`**: fits a photographed sheet to the model, straightens it and scores the model against it.
 - **`blendgen/build.py`**: runs inside Blender and imports nothing from this package, so stock Blender runs it. It lays out collections, shares mesh data between placements, attaches FBX exporters, exports, then re-imports every file to check it.
 - **`unreal/`**: the import and check scripts, copied into every bundle.
 - **`schema/building-spec.schema.json`**: point your editor at it for completion while writing specs (`aw schema` regenerates it).
@@ -111,11 +150,14 @@ The drawings mostly agree with themselves. Five dimension chains on the foundati
 | Nanite | On for opaque meshes, off for glass and acrylic |
 | Datum | The spec's `datum` level (F.F. 100'-0") is z = 0 |
 
-## Known limits of phase 0
+## Known limits
 
-- One pavilion at an assumed position and rotation; the plan's center point coordinates are not read yet.
+- The roofs between pavilions, the music room's flat roof, the stair tower roof and the living room roof east of the hearth are not modelled. The floor plan and detail D-2 would settle most of them.
+- Interior walls and the remaining connections between pavilions are not read. The slab between pavilions is inferred by closing gaps under 10 feet.
+- The small pavilions' ring radius is assumed (1'-6"), so their roof pitches come out steep and are reported as conflicts.
+- The two round cores may be fireplace flues that rise above the roof. They are modelled to the top of masonry.
 - Not modelled: column notches, door frames, trellis, gutters and footings.
 - Materials are flat-color placeholders named for Unreal.
-- Nothing reads the sheets automatically yet; that is phase 2.
+- The sheets are read by hand with tooling; reading them automatically is phase 2.
 
 The five sheet photos in `projects/example-house/sheets/` are a third party's drawings. Keep this repository private unless you have permission to publish them.

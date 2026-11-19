@@ -1,34 +1,41 @@
 """The radial pavilion pattern.
 
-One spec entry ("regular hexagon, 8'-10" side, glazed on three sides, stone
-arc on the rest") expands into columns, headers, doors, walls, slab, roof,
-rafters, compression ring and skylight, each at an exact position.
+One spec entry ("regular hexagon, 8'-10" side, glazed on three sides, a stone
+arc of 11'-8" radius from 238 to 303 degrees") expands into columns, headers,
+doors, stone arcs, roof, rafters, compression ring and skylight, each at an
+exact position, plus a footprint for the floor slab of its level.
 
 Geometry rules, in the order they are applied:
 
 * Plan: a regular n-gon about the control point; vertex k at angle
-  rotation + k * 360/n. Glazed sides form one contiguous run; the remaining
-  span carries the stone arc wall.
+  rotation + k * 360/n. Glazed sides form one contiguous run (it may wrap
+  past the last vertex).
 * Glazed facets are planes at the stated pitch, rising from the eave line (the
   polygon side, at the height of the top of the rafters over the header).
-* The compression ring radius is derived: it is where the hips reach the
-  dimensioned top of ring. The radius scaled off the elevation is only a
+* The compression ring: when its top is dimensioned, its radius is derived
+  from the pitch (the hips reach the top of ring there); when only its radius
+  is known, its top is derived instead. A radius scaled off a sheet is only a
   cross-check.
-* The conical roof over the stone side runs from the top of ring down to the
-  rafters bearing on the sill at the dimensioned top of masonry. Its slope is
-  derived and checked against the general note.
+* The conical roof covers the angles the glass does not, out to the stone
+  arc plus overhang where there is an arc and to the polygon edge elsewhere.
+  Its slope runs from the top of ring down to the rafters bearing on the sill
+  at the dimensioned top of masonry, and is checked against the general note.
+  Every roof quad lies on one cone through its apex, so each is planar.
 """
 
 from __future__ import annotations
 
 import math
-from typing import Callable
+from dataclasses import dataclass
+from fractions import Fraction
+
+from shapely.geometry import Polygon
 
 from architectworks.geom import mesh as g
 from architectworks.geom.mesh import Mesh, Vec3
-from architectworks.geom.xform import Matrix, frame, matmul, rotation_z, translation
-from architectworks.resolve.model import Check, Model, Placement, src_dict
-from architectworks.spec.model import BuildingSpec, ComponentType, RadialPavilion
+from architectworks.geom.xform import Matrix, apply, frame, matmul, rotation_z, translation
+from architectworks.resolve.model import Check, Footprint, Model, Placement, src_dict
+from architectworks.spec.model import BuildingSpec, ComponentType, RadialPavilion, StoneArcSpec, contiguous_run
 from architectworks.units import format_length, to_metres
 
 Z: Vec3 = (0.0, 0.0, 1.0)
@@ -40,8 +47,6 @@ def camel(text: str) -> str:
 
 
 def fmt_m(metres: float) -> str:
-    from fractions import Fraction
-
     return format_length(Fraction(metres / INCH).limit_denominator(64))
 
 
@@ -56,335 +61,469 @@ def member_frame(start: Vec3, end: Vec3) -> tuple[Matrix, float]:
     return frame(start, x, y, z), length
 
 
-def expand_pavilion(spec: BuildingSpec, el: RadialPavilion, model: Model) -> None:
-    code = spec.building.code
-    prefix = f"SM_{code}"
-    types = spec.types.components
-    mats = spec.types.materials
-    datum = spec.levels[spec.datum].elev
+def norm_span(start: float, end: float) -> tuple[float, float]:
+    """(a0, a1) with 0 <= a0 < 360 and a0 < a1 <= a0 + 360."""
+    a0 = start % 360.0
+    span = (end - start) % 360.0 or 360.0
+    return a0, a0 + span
 
-    def level_z(level_id: str) -> float:
-        return to_metres(spec.levels[level_id].elev - datum)
 
-    def ctype(name: str) -> ComponentType:
-        return types[name]
+def in_span(theta: float, a0: float, a1: float, eps: float = 1e-9) -> bool:
+    return (theta - a0) % 360.0 <= (a1 - a0) + eps
 
-    def material(t: ComponentType) -> tuple[str, bool]:
-        m = mats[t.material]
+
+@dataclass
+class Ctx:
+    """Shared values for one pavilion, in its local frame (vertex 0 on +X)."""
+
+    spec: BuildingSpec
+    el: RadialPavilion
+    model: Model
+    prefix: str
+    n: int
+    step: float
+    half: float
+    side: float
+    R_c: float
+    apothem: float
+    P: Matrix
+    z_f: float
+
+    def vertex(self, k: int, r: float | None = None, z: float = 0.0) -> Vec3:
+        return g.polar(self.R_c if r is None else r, k * self.step, z)
+
+    def edge_radius(self, theta: float) -> float:
+        k = math.floor(theta / self.step)
+        return self.apothem / math.cos(math.radians(theta - (k + 0.5) * self.step))
+
+    def level_z(self, level_id: str) -> float:
+        return to_metres(self.spec.levels[level_id].elev - self.spec.levels[self.spec.datum].elev)
+
+    def ctype(self, name: str) -> ComponentType:
+        return self.spec.types.components[name]
+
+    def material(self, t: ComponentType) -> tuple[str, bool]:
+        m = self.spec.types.materials[t.material]
         return m.unreal, not m.translucent
 
-    def tsrc(name: str):
-        return src_dict(types[name].src, type=name)
+    def tsrc(self, name: str) -> dict:
+        return src_dict(self.spec.types.components[name].src, type=name)
 
-    # ---- plan ---------------------------------------------------------------
-    n = el.plan.sides
-    step = 360.0 / n
-    half = math.pi / n
-    side = to_metres(el.plan.side)
-    R_c = side / (2 * math.sin(half))
-    apothem = R_c * math.cos(half)
-    ctrl = spec.control[el.center]
-    cx, cy = to_metres(ctrl.at[0]), to_metres(ctrl.at[1])
-    z_f = level_z(el.floor)
-    P = matmul(translation((cx, cy, z_f)), rotation_z(el.plan.rotation))
-    G = sorted(el.glazed_sides)
-    g0, g1 = G[0], G[-1] + 1
-    glazed_vertices = list(range(g0, g1 + 1))
-    stone_a0, stone_a1 = g1 * step, g0 * step + 360.0
-    eid = el.id
-
-    def vertex(k: int, r: float = R_c, z: float = 0.0) -> Vec3:
-        return g.polar(r, k * step, z)
-
-    def place(pid: str, comp: str, local: Matrix, basis: str, confidence: str, source: dict) -> None:
-        model.place(
+    def place(self, pid: str, comp: str, local: Matrix, basis: str, confidence: str, source: dict) -> None:
+        self.model.place(
             Placement(
-                id=f"{eid}.{pid}",
+                id=f"{self.el.id}.{pid}",
                 component=comp,
-                category=model.components[comp].category,
-                matrix=matmul(P, local),
-                element=eid,
+                category=self.model.components[comp].category,
+                matrix=matmul(self.P, local),
+                element=self.el.id,
                 basis=basis,
                 confidence=confidence,
                 source=source,
             )
         )
 
-    plan_src = el.plan.src
+    def world_xy(self, p: Vec3) -> tuple[float, float]:
+        w = apply(self.P, p)
+        return (w[0], w[1])
 
-    # ---- columns ------------------------------------------------------------
-    col_t = ctype(el.columns.type)
-    profile = [(to_metres(x), to_metres(y)) for x, y in spec.types.profiles[col_t.profile].points]
+
+def expand_pavilion(spec: BuildingSpec, el: RadialPavilion, model: Model) -> None:
+    n = el.plan.sides
+    step = 360.0 / n
+    half = math.pi / n
+    side = to_metres(el.plan.side)
+    R_c = side / (2 * math.sin(half))
+    ctrl = spec.control[el.center]
+    z_f = to_metres(spec.levels[el.floor].elev - spec.levels[spec.datum].elev)
+    P = matmul(translation((to_metres(ctrl.at[0]), to_metres(ctrl.at[1]), z_f)), rotation_z(el.plan.rotation))
+    c = Ctx(spec, el, model, f"SM_{spec.building.code}", n, step, half, side, R_c, R_c * math.cos(half), P, z_f)
+
+    g_start, g_count = contiguous_run(el.glazed_sides, n)
+    G = [g_start + i for i in range(g_count)]  # unwrapped side indices
+    glazed_vertices = list(range(g_start, g_start + g_count + 1)) if g_count else []
+    rest = (float((g_start + g_count) * step), float(g_start * step + 360.0)) if g_count else (0.0, 360.0)
+    arcs = [(a, *norm_span(a.start - el.plan.rotation, a.end - el.plan.rotation)) for a in el.stone_arcs]
+
+    for k in range(n):
+        model.points[f"{el.id}.v{k}"] = c.world_xy(c.vertex(k))
+    model.points[el.id] = c.world_xy((0.0, 0.0, 0.0))
+
+    col_outer = _columns_headers_doors(c, G, glazed_vertices)
+    tops = _stone_arcs(c, arcs, col_outer)
+    _footprint(c, glazed_vertices, arcs)
+    if el.roof is not None:
+        _roof(c, G, glazed_vertices, rest, arcs, tops)
+
+
+# ---- columns, headers, doors -----------------------------------------------------
+
+
+def _columns_headers_doors(c: Ctx, G: list[int], glazed_vertices: list[int]) -> float:
+    el, model = c.el, c.model
+    col_t = c.ctype(el.columns.type)
+    profile = [(to_metres(x), to_metres(y)) for x, y in c.spec.types.profiles[col_t.profile].points]
+    col_outer = max(y for _, y in profile)
+    if not glazed_vertices:
+        return col_outer
     H_col = to_metres(col_t.height)
     col_mesh = g.prism(profile, 0.0, H_col)
-    mat, nanite = material(col_t)
-    col_name = model.shared(prefix, camel(el.columns.type), "Structure", col_mesh, mat, [col_mesh], nanite, tsrc(el.columns.type))
+    mat, nanite = c.material(col_t)
+    col_name = model.shared(c.prefix, camel(el.columns.type), "Structure", col_mesh, mat, [col_mesh], nanite, c.tsrc(el.columns.type))
+    plan_src = el.plan.src
     col_src = src_dict(el.columns.src or plan_src)
     for k in glazed_vertices:
-        local = matmul(translation(vertex(k)), rotation_z(k * step - 90.0))
-        place(f"column.v{k}", col_name, local, plan_src.basis, plan_src.confidence, col_src)
-    col_outer = max(y for _, y in profile)
+        local = matmul(translation(c.vertex(k)), rotation_z(k * c.step - 90.0))
+        c.place(f"column.v{k % c.n}", col_name, local, plan_src.basis, plan_src.confidence, col_src)
 
-    # ---- headers ------------------------------------------------------------
-    hdr_t = ctype(el.header.type)
+    hdr_t = c.ctype(el.header.type)
     w_h, d_h = (to_metres(v) for v in hdr_t.section)
-    z_h = level_z(el.header.top) - z_f
-    hdr_mesh = g.box(0.0, side, -w_h / 2, w_h / 2, -d_h, 0.0)
-    mat, nanite = material(hdr_t)
-    hdr_name = model.shared(prefix, camel(el.header.type), "Structure", hdr_mesh, mat, [hdr_mesh] if hdr_t.collision else [], nanite, tsrc(el.header.type))
+    z_h = c.level_z(el.header.top) - c.z_f
+    hdr_mesh = g.box(0.0, c.side, -w_h / 2, w_h / 2, -d_h, 0.0)
+    mat, nanite = c.material(hdr_t)
+    hdr_name = model.shared(c.prefix, camel(el.header.type), "Structure", hdr_mesh, mat, [hdr_mesh] if hdr_t.collision else [], nanite, c.tsrc(el.header.type))
+    hdr_level = c.spec.levels[el.header.top].src
     for k in G:
-        start, end = vertex(k, z=z_h), vertex(k + 1, z=z_h)
-        local, _ = member_frame(start, end)
-        place(f"header.s{k}", hdr_name, local, "dimensioned", spec.levels[el.header.top].src.confidence, src_dict(spec.levels[el.header.top].src, type=el.header.type))
-    model.checks.append(
-        _close_check(
-            f"{eid}.header_depth",
-            "top of header minus floor minus column height equals the header depth",
-            measured=z_h - H_col,
-            expected=d_h,
-            tol=INCH / 8,
-        )
-    )
+        local, _ = member_frame(c.vertex(k, z=z_h), c.vertex(k + 1, z=z_h))
+        c.place(f"header.s{k % c.n}", hdr_name, local, "dimensioned", hdr_level.confidence, src_dict(hdr_level, type=el.header.type))
+    model.checks.append(close_check(f"{el.id}.header_depth", f"{el.id}: top of header minus floor minus column height equals the header depth", z_h - H_col, d_h, INCH / 8))
 
-    # ---- doors --------------------------------------------------------------
-    door_t = ctype(el.doors.type)
+    door_t = c.ctype(el.doors.type)
     t_d = to_metres(door_t.thickness)
     # where the glazing line leaves the column, in the column's own frame
-    edge_dir_local = g.unit(g.sub(vertex(1), vertex(0)))
-    a_rot = math.radians(-(0 * step - 90.0))
-    in_col = (edge_dir_local[0] * math.cos(a_rot) - edge_dir_local[1] * math.sin(a_rot), edge_dir_local[0] * math.sin(a_rot) + edge_dir_local[1] * math.cos(a_rot))
-    inset = g.ray_exit(profile, in_col)
-    L_door = side - 2 * inset
+    e = g.unit(g.sub(c.vertex(1), c.vertex(0)))
+    inset = g.ray_exit(profile, (-e[1], e[0]))
+    L_door = c.side - 2 * inset
     door_mesh = g.box(0.0, L_door, -t_d / 2, t_d / 2, 0.0, H_col)
-    mat, nanite = material(door_t)
-    door_name = model.shared(prefix, camel(el.doors.type), "Envelope", door_mesh, mat, [door_mesh] if door_t.collision else [], nanite, tsrc(el.doors.type))
-    door_src = src_dict(el.doors.src) if el.doors.src else tsrc(el.doors.type)
+    mat, nanite = c.material(door_t)
+    door_name = model.shared(c.prefix, camel(el.doors.type), "Envelope", door_mesh, mat, [door_mesh] if door_t.collision else [], nanite, c.tsrc(el.doors.type))
+    door_src = src_dict(el.doors.src) if el.doors.src else c.tsrc(el.doors.type)
     for k in G:
-        a, b = vertex(k), vertex(k + 1)
-        e = g.unit(g.sub(b, a))
-        origin = g.add(a, g.scale(e, inset))
-        place(f"door.s{k}", door_name, frame(origin, e, g.cross(Z, e), Z), door_src.get("basis", "measured"), door_src.get("confidence", "low"), door_src)
+        p0, p1 = c.vertex(k), c.vertex(k + 1)
+        d = g.unit(g.sub(p1, p0))
+        c.place(f"door.s{k % c.n}", door_name, frame(g.add(p0, g.scale(d, inset)), d, g.cross(Z, d), Z), door_src.get("basis", "measured"), door_src.get("confidence", "low"), door_src)
+    model.derived.setdefault(el.id, {}).update({"door_inset_from_column_cp": fmt_m(inset), "door_width": fmt_m(L_door)})
+    return col_outer
 
-    # ---- roof numbers -------------------------------------------------------
-    raf_t = ctype(el.roof.rafters.type)
+
+# ---- stone arcs ----------------------------------------------------------------------
+
+
+def segments_for(span: float, per_90: int) -> int:
+    return max(2, math.ceil(span / 90.0 * per_90))
+
+
+def _stone_arcs(c: Ctx, arcs, col_outer: float) -> list[float]:
+    el, model = c.el, c.model
+    tops = []
+    for i, (a, a0, a1) in enumerate(arcs):
+        wall_t = c.ctype(a.type)
+        R_in, R_out, r_mid = wall_t.wall_radii(to_metres(a.radius_outside), to_metres)
+        t_w = R_out - R_in
+        z_m = c.level_z(a.top) - c.z_f
+        tops.append(z_m)
+        seg = segments_for(a1 - a0, a.segments_per_90)
+        mesh = g.annular_sector(R_in, R_out, a0, a1, seg, 0.0, z_m)
+        per = max(1, round(seg / max(1, round((a1 - a0) / 15.0))))
+        hulls = [g.annular_sector(R_in, R_out, a0 + (a1 - a0) * j / seg, a0 + (a1 - a0) * min(j + per, seg) / seg, 1, 0.0, z_m) for j in range(0, seg, per)]
+        mat, nanite = c.material(wall_t)
+        suffix = "" if len(arcs) == 1 else str(i)
+        name = model.unique(f"{c.prefix}_{camel(el.id)}_WallStoneArc{suffix}", "Envelope", mesh, mat, hulls if wall_t.collision else [], nanite, c.tsrc(a.type))
+        ws = a.src or wall_t.src
+        c.place(f"wall.arc{suffix}", name, rotation_z(0.0), ws.basis, ws.confidence, src_dict(ws, type=a.type))
+        model.points[f"{el.id}.arc{i}.start"] = c.world_xy(g.polar(r_mid, a0))
+        model.points[f"{el.id}.arc{i}.end"] = c.world_xy(g.polar(r_mid, a1))
+        if a.returns:
+            _returns(c, a, a0, a1, R_in, t_w, z_m, col_outer)
+    return tops
+
+
+def _returns(c: Ctx, a: StoneArcSpec, a0: float, a1: float, R_in: float, t_w: float, z_m: float, col_outer: float) -> None:
+    model = c.model
+    wall_t = c.ctype(a.type)
+    mat, nanite = c.material(wall_t)
+    assumed = {"basis": "assumed", "confidence": "low", "note": "straight returns from the end columns to the arc are assumed; the plan does not show them clearly"}
+    for pid, ang, sgn in (("wall.return.start", a0, 1.0), ("wall.return.end", a1, -1.0)):
+        on_vertex = abs(ang / c.step - round(ang / c.step)) < 1e-6
+        r1 = (c.R_c + col_outer) if on_vertex else c.edge_radius(ang % 360.0)
+        L_ret = R_in - r1
+        if L_ret <= 0:
+            continue
+        ret_mesh = g.box(0.0, L_ret, -t_w / 2, t_w / 2, 0.0, z_m)
+        ret_name = model.shared(c.prefix, camel(a.type) + "Return", "Envelope", ret_mesh, mat, [ret_mesh] if wall_t.collision else [], nanite, c.tsrc(a.type))
+        u = g.polar(1.0, ang)
+        tang = (-u[1], u[0], 0.0)
+        origin = g.add(g.scale(u, r1), g.scale(tang, sgn * t_w / 2))
+        c.place(pid, ret_name, frame(origin, u, tang, Z), "assumed", "low", assumed)
+
+
+# ---- footprint ----------------------------------------------------------------------
+
+
+def _footprint(c: Ctx, glazed_vertices: list[int], arcs) -> None:
+    """The pavilion's share of its level's slab: glazed sides carried out by
+    the edge offset, stone arcs to their outside face, open sides to the
+    polygon edge."""
+    el = c.el
+    R_slab = c.R_c + to_metres(el.slab.edge_offset) / math.cos(c.half)
+    if glazed_vertices:
+        b0, b1 = glazed_vertices[-1] * c.step, glazed_vertices[0] * c.step + 360.0
+    else:
+        b0, b1 = 0.0, 360.0
+
+    def radius(theta: float) -> float:
+        for a, a0, a1 in arcs:
+            if in_span(theta, a0, a1):
+                return max(c.ctype(a.type).wall_radii(to_metres(a.radius_outside), to_metres)[1], c.edge_radius(theta % 360.0))
+        return c.edge_radius(theta % 360.0)
+
+    angles = set(g.angles(b0, b1, max(2, math.ceil((b1 - b0) / 2.0))))
+    angles.update(k * c.step for k in range(-c.n, 3 * c.n) if b0 < k * c.step < b1)
+    for _, a0, a1 in arcs:
+        for edge in (a0, a1):
+            for e in (edge, edge + 360.0, edge - 360.0):
+                if b0 < e < b1:
+                    angles.update({e - 1e-3, e + 1e-3})
+    ring_pts = [(t, radius(t)) for t in sorted(angles)]
+    if glazed_vertices:
+        ring_pts = [(t, r) for i, (t, r) in enumerate(ring_pts) if not (i in (0, len(ring_pts) - 1) and r < R_slab)]
+    pts = [c.vertex(k, r=R_slab)[:2] for k in glazed_vertices] + [g.polar(r, t)[:2] for t, r in ring_pts]
+    local = Polygon(pts).buffer(0)
+    world = Polygon([c.world_xy((x, y, 0.0)) for x, y in local.exterior.coords])
+
+    # convex pieces for collision: a triangle per glazed side, sectors of at most 45 degrees elsewhere
+    pieces: list[list[tuple[float, float]]] = []
+    for i in range(len(glazed_vertices) - 1):
+        pieces.append([(0.0, 0.0), c.vertex(glazed_vertices[i], r=R_slab)[:2], c.vertex(glazed_vertices[i + 1], r=R_slab)[:2]])
+    count = max(1, math.ceil((b1 - b0) / 45.0))
+    for i in range(count):
+        s0, s1 = b0 + (b1 - b0) * i / count, b0 + (b1 - b0) * (i + 1) / count
+        pieces.append([(0.0, 0.0)] + [g.polar(radius(t), t)[:2] for t in g.angles(s0, s1, 8)])
+    hulls = [list(Polygon([c.world_xy((x, y, 0.0)) for x, y in p]).convex_hull.exterior.coords)[:-1] for p in pieces]
+    c.model.footprints.append(
+        Footprint(element=el.id, level=el.floor, slab_type=el.slab.type, polygon=world, hulls=hulls, source=src_dict(el.slab.src or c.ctype(el.slab.type).src, type=el.slab.type))
+    )
+
+
+# ---- roof ---------------------------------------------------------------------------
+
+
+def _roof(c: Ctx, G: list[int], glazed_vertices: list[int], rest: tuple[float, float], arcs, tops: list[float]) -> None:
+    el, model, roof = c.el, c.model, c.el.roof
+    eid = el.id
+    raf_t = c.ctype(roof.rafters.type)
     w_r, d_r = (to_metres(v) for v in raf_t.section)
-    pitch = math.radians(el.roof.glazed.pitch)
-    z_e = z_h + d_r / math.cos(pitch)
-    z_rt = level_z(el.roof.ring.top) - z_f
-    r_ring = (apothem - (z_rt - z_e) / math.tan(pitch)) / math.cos(half)
-    if not 0 < r_ring < apothem:
-        raise ValueError(f"{eid}: derived ring radius {r_ring:.3f} m is not inside the plan; check pitch and levels")
-    tan_hip = math.tan(pitch) * math.cos(half)
+    ring = roof.ring
 
-    def facet_z(p: Vec3, k: int) -> float:
-        u = g.polar(1.0, (k + 0.5) * step)
-        return z_e + (apothem - g.dot((p[0], p[1], 0.0), u)) * math.tan(pitch)
+    # ---- ring radius and top, and the glazed pitch ----
+    pitch = z_e = tan_hip = None
+    if roof.glazed is not None:
+        pitch = math.radians(roof.glazed.pitch)
+        z_h = c.level_z(el.header.top) - c.z_f
+        z_e = z_h + d_r / math.cos(pitch)
+        tan_hip = math.tan(pitch) * math.cos(c.half)
+        if ring.top is not None:
+            z_rt = c.level_z(ring.top) - c.z_f
+            r_ring = (c.apothem - (z_rt - z_e) / math.tan(pitch)) / math.cos(c.half)
+            ring_basis = "radius derived from pitch and top of ring"
+            if ring.radius is not None:
+                model.checks.append(close_check(f"{eid}.ring_radius_given", f"{eid}: ring radius given vs derived from the pitch", to_metres(ring.radius), r_ring, 3 * INCH))
+                r_ring = to_metres(ring.radius)
+        else:
+            r_ring = to_metres(ring.radius)
+            z_rt = z_e + (c.apothem - r_ring * math.cos(c.half)) * math.tan(pitch)
+            ring_basis = "top of ring derived from pitch and ring radius"
+        if not 0 < r_ring < c.apothem:
+            raise ValueError(f"{eid}: ring radius {r_ring:.3f} m is not inside the plan; check pitch and levels")
+    else:
+        if ring.radius is None or ring.top is None:
+            raise ValueError(f"{eid}: a roof without glazed facets needs the ring's radius and top")
+        r_ring = to_metres(ring.radius)
+        z_rt = c.level_z(ring.top) - c.z_f
+        ring_basis = "radius and top as given"
 
-    # stone side
-    wall_t = ctype(el.stone_wall.type)
-    R_out = to_metres(el.stone_wall.radius_outside)
-    t_w = to_metres(wall_t.thickness)
-    R_in, R_wc = R_out - t_w, R_out - t_w / 2
-    z_m = level_z(el.stone_wall.top) - z_f
-    sill_t = ctype(el.roof.sill.type)
+    # ---- conical slope: from top of ring to rafters bearing on the first arc's sill ----
+    sill_t = c.ctype(roof.sill.type)
     w_s, d_s = (to_metres(v) for v in sill_t.section)
-    z_b = z_m + d_s
-    slope = math.atan((z_rt - z_b - d_r) / (R_wc - r_ring))
-    for _ in range(50):
-        slope = math.atan((z_rt - z_b - d_r / math.cos(slope)) / (R_wc - r_ring))
+    eave_overhang = to_metres(roof.conical.eave_overhang)
+    if arcs:
+        a = arcs[0][0]
+        R_wc = c.ctype(a.type).wall_radii(to_metres(a.radius_outside), to_metres)[2]
+        z_b = tops[0] + d_s
+        slope = math.atan((z_rt - z_b - d_r) / (R_wc - r_ring))
+        for _ in range(50):
+            slope = math.atan((z_rt - z_b - d_r / math.cos(slope)) / (R_wc - r_ring))
+        slope_basis = "derived from top of ring and top of masonry"
+    elif tan_hip is not None:
+        slope = math.atan(tan_hip)
+        slope_basis = "continues the glazed hips"
+    else:
+        slope = math.radians(roof.conical.nominal_pitch or 30.0)
+        slope_basis = "nominal pitch"
     tan_c = math.tan(slope)
 
     def cone_z(r: float) -> float:
         return z_rt - tan_c * (r - r_ring)
 
-    R_eave = R_out + to_metres(el.roof.conical.eave_overhang)
+    def eave_radius(theta: float) -> float:
+        for a, a0, a1 in arcs:
+            if in_span(theta, a0, a1):
+                return c.ctype(a.type).wall_radii(to_metres(a.radius_outside), to_metres)[1] + eave_overhang
+        return c.edge_radius(theta % 360.0)
 
-    # ---- glazed roof facets ---------------------------------------------------
-    rg_t = ctype(el.roof.glazed.panel)
-    t_g = to_metres(rg_t.thickness)
-    arc_n = 8
-    v0, v1 = vertex(0, z=z_e), vertex(1, z=z_e)
-    inner = []
-    for i in range(arc_n + 1):
-        a = step * (arc_n - i) / arc_n
-        p = g.polar(r_ring, a)
-        inner.append((p[0], p[1], facet_z(p, 0)))
-    facet_poly = [v0, v1] + inner
-    facet_mesh = g.plate(facet_poly, t_g)
-    facet_hull = g.plate([v0, v1, inner[0], inner[-1]], t_g)
-    mat, nanite = material(rg_t)
-    facet_name = model.shared(prefix, camel(el.roof.glazed.panel), "Roof", facet_mesh, mat, [facet_hull] if rg_t.collision else [], nanite, tsrc(el.roof.glazed.panel))
-    gl_src = src_dict(el.roof.glazed.src)
-    for k in G:
-        place(f"roof_glass.s{k}", facet_name, rotation_z(k * step), el.roof.glazed.src.basis, el.roof.glazed.src.confidence, gl_src)
+    # ---- glazed facets ----
+    if roof.glazed is not None:
+        rg_t = c.ctype(roof.glazed.panel)
+        t_g = to_metres(rg_t.thickness)
 
-    # ---- rafters --------------------------------------------------------------
-    mat, nanite = material(raf_t)
-    raf_src = src_dict(el.roof.rafters.src) if el.roof.rafters.src else tsrc(el.roof.rafters.type)
-    raf_basis = raf_src.get("basis", "rule")
-    raf_conf = raf_src.get("confidence", "medium")
-    base = camel(el.roof.rafters.type)
+        def facet_z(p: Vec3) -> float:
+            u = g.polar(1.0, 0.5 * c.step)
+            return z_e + (c.apothem - g.dot((p[0], p[1], 0.0), u)) * math.tan(pitch)
 
-    def rafter(pid: str, eave: Vec3, top: Vec3, basis: str = raf_basis) -> None:
+        v0, v1 = c.vertex(0, z=z_e), c.vertex(1, z=z_e)
+        inner = []
+        for i in range(9):
+            p = g.polar(r_ring, c.step * (8 - i) / 8)
+            inner.append((p[0], p[1], facet_z(p)))
+        facet_mesh = g.plate([v0, v1] + inner, t_g)
+        facet_hull = g.plate([v0, v1, inner[0], inner[-1]], t_g)
+        mat, nanite = c.material(rg_t)
+        facet_name = model.shared(c.prefix, camel(roof.glazed.panel), "Roof", facet_mesh, mat, [facet_hull] if rg_t.collision else [], nanite, c.tsrc(roof.glazed.panel))
+        gl = roof.glazed.src
+        for k in G:
+            c.place(f"roof_glass.s{k % c.n}", facet_name, rotation_z(k * c.step), gl.basis, gl.confidence, src_dict(gl))
+
+    # ---- conical roof ----
+    ranges = [rest] if roof.conical.span == "rest" else [(a0, a1) for _, a0, a1 in arcs]
+    sh_t = c.ctype(roof.conical.type)
+    t_v = to_metres(sh_t.thickness) / math.cos(slope)
+    eps = 0.25
+
+    def section(theta: float):
+        R_e = eave_radius(theta)
+        return g.radial_section(theta, [(r_ring, z_rt), (R_e, cone_z(R_e)), (R_e, cone_z(R_e) + t_v), (r_ring, z_rt + t_v)])
+
+    cone_meshes, cone_hulls = [], []
+    for b0, b1 in ranges:
+        cuts = {b0, b1}
+        for _, a0, a1 in arcs:
+            for edge in (a0, a1):
+                for e in (edge, edge + 360.0, edge - 360.0):
+                    if b0 + eps < e < b1 - eps:
+                        cuts.update({e - eps, e + eps})
+        cuts.update(k * c.step for k in range(-c.n, 3 * c.n) if b0 < k * c.step < b1)
+        cuts = sorted(cuts)
+        samples = []
+        for s0, s1 in zip(cuts, cuts[1:]):
+            m = max(1, math.ceil((s1 - s0) / roof.conical.max_step - 1e-9))
+            samples.extend(s0 + (s1 - s0) * j / m for j in range(m))
+        samples.append(cuts[-1])
+        sections = [section(t) for t in samples]
+        cone_meshes.append(g.loft(sections))
+        for i in range(0, len(sections) - 1, 2):
+            cone_hulls.append(g.loft([sections[i], sections[min(i + 2, len(sections) - 1)]]))
+    mat, nanite = c.material(sh_t)
+    cone_name = model.unique(
+        f"{c.prefix}_{camel(eid)}_RoofConical", "Roof", g.merge(cone_meshes), mat, [h for h in cone_hulls if g.is_convex(h, 1e-6)] if sh_t.collision else [], nanite, c.tsrc(roof.conical.type)
+    )
+    cs = roof.conical.src
+    c.place("roof_conical", cone_name, rotation_z(0.0), cs.basis, cs.confidence, src_dict(cs, type=roof.conical.type, note=f"slope {slope_basis}"))
+
+    # ---- rafters ----
+    mat, nanite = c.material(raf_t)
+    raf_src = src_dict(roof.rafters.src) if roof.rafters.src else c.tsrc(roof.rafters.type)
+    base = camel(roof.rafters.type)
+
+    def rafter(pid: str, eave: Vec3, top: Vec3, basis: str) -> None:
         local, length = member_frame(eave, top)
         mesh = g.box(0.0, length, -w_r / 2, w_r / 2, -d_r, 0.0)
-        name = model.shared(prefix, base, "Structure", mesh, mat, [mesh] if raf_t.collision else [], nanite, tsrc(el.roof.rafters.type))
-        place(pid, name, local, basis, raf_conf, raf_src)
+        name = model.shared(c.prefix, base, "Structure", mesh, mat, [mesh] if raf_t.collision else [], nanite, c.tsrc(roof.rafters.type))
+        c.place(pid, name, local, basis, raf_src.get("confidence", "medium"), raf_src)
 
-    for k in glazed_vertices:
-        rafter(f"rafter.hip.v{k}", vertex(k, z=z_e), vertex(k, r=r_ring, z=z_rt), "rule")
-    if el.roof.rafters.glazed_midspan:
-        for k in G:
-            mid = (k + 0.5) * step
-            e = g.polar(apothem, mid, z_e)
-            t = g.polar(r_ring, mid)
-            rafter(f"rafter.mid.s{k}", e, (t[0], t[1], z_e + (apothem - r_ring) * math.tan(pitch)))
-    spacing = el.roof.rafters.cone_spacing
-    count = int(round((stone_a1 - stone_a0) / spacing)) - 1
-    for i in range(1, count + 1):
-        a = stone_a0 + i * spacing
-        rafter(f"rafter.cone.{i:02d}", g.polar(R_eave, a, cone_z(R_eave)), g.polar(r_ring, a, z_rt))
+    if roof.glazed is not None:
+        for k in glazed_vertices:
+            rafter(f"rafter.hip.v{k % c.n}", c.vertex(k, z=z_e), c.vertex(k, r=r_ring, z=z_rt), "rule")
+        if roof.rafters.glazed_midspan:
+            for k in G:
+                mid = (k + 0.5) * c.step
+                t = g.polar(r_ring, mid)
+                rafter(f"rafter.mid.s{k % c.n}", g.polar(c.apothem, mid, z_e), (t[0], t[1], z_e + (c.apothem - r_ring) * math.tan(pitch)), raf_src.get("basis", "rule"))
+    idx = 0
+    for b0, b1 in ranges:
+        count = int(round((b1 - b0) / roof.rafters.cone_spacing))
+        for i in range(1, count):
+            ang = b0 + (b1 - b0) * i / count
+            idx += 1
+            R_e = eave_radius(ang)
+            rafter(f"rafter.cone.{idx:02d}", g.polar(R_e, ang, cone_z(R_e)), g.polar(r_ring, ang, z_rt), raf_src.get("basis", "measured"))
 
-    # ---- stone wall, returns, sill -------------------------------------------
-    seg_w = el.stone_wall.segments
-    mat, nanite = material(wall_t)
-    wall_mesh = g.annular_sector(R_in, R_out, stone_a0, stone_a1, seg_w, 0.0, z_m)
-    per = max(1, seg_w // 12)
-    wall_hulls = [
-        g.annular_sector(R_in, R_out, stone_a0 + (stone_a1 - stone_a0) * i / seg_w, stone_a0 + (stone_a1 - stone_a0) * min(i + per, seg_w) / seg_w, 1, 0.0, z_m)
-        for i in range(0, seg_w, per)
-    ]
-    wall_name = model.unique(f"{prefix}_{camel(eid)}_WallStoneArc", "Envelope", wall_mesh, mat, wall_hulls if wall_t.collision else [], nanite, tsrc(el.stone_wall.type))
-    ws = el.stone_wall.src or wall_t.src
-    place("wall.arc", wall_name, rotation_z(0.0), ws.basis, ws.confidence, src_dict(ws, type=el.stone_wall.type))
+    # ---- sills on the stone arcs ----
+    for i, (a, a0, a1) in enumerate(arcs):
+        R_wc = c.ctype(a.type).wall_radii(to_metres(a.radius_outside), to_metres)[2]
+        sill_mesh = g.annular_sector(R_wc - w_s / 2, R_wc + w_s / 2, a0, a1, segments_for(a1 - a0, a.segments_per_90), tops[i], tops[i] + d_s)
+        s_mat, s_nan = c.material(sill_t)
+        suffix = "" if len(arcs) == 1 else str(i)
+        sill_name = model.unique(f"{c.prefix}_{camel(eid)}_Sill{suffix}", "Structure", sill_mesh, s_mat, [], s_nan, c.tsrc(roof.sill.type))
+        c.place(f"sill{suffix}", sill_name, rotation_z(0.0), sill_t.src.basis, sill_t.src.confidence, c.tsrc(roof.sill.type))
 
-    if el.stone_wall.returns:
-        r1 = R_c + col_outer
-        L_ret = R_in - r1
-        ret_mesh = g.box(0.0, L_ret, -t_w / 2, t_w / 2, 0.0, z_m)
-        ret_name = model.shared(prefix, camel(el.stone_wall.type) + "Return", "Envelope", ret_mesh, mat, [ret_mesh] if wall_t.collision else [], nanite, tsrc(el.stone_wall.type))
-        assumed = {"basis": "assumed", "confidence": "low", "note": "straight returns from the end columns to the arc are assumed; the plan does not show them clearly"}
-        for pid, ang, sgn in (("wall.return.start", stone_a0, 1.0), ("wall.return.end", stone_a1, -1.0)):
-            u = g.polar(1.0, ang)
-            tang = (-u[1], u[0], 0.0)
-            origin = g.add(g.scale(u, r1), g.scale(tang, sgn * t_w / 2))
-            place(pid, ret_name, frame(origin, u, tang, Z), "assumed", "low", assumed)
-
-    sill_mesh = g.annular_sector(R_wc - w_s / 2, R_wc + w_s / 2, stone_a0, stone_a1, seg_w, z_m, z_b)
-    mat, nanite = material(sill_t)
-    sill_name = model.unique(f"{prefix}_{camel(eid)}_Sill", "Structure", sill_mesh, mat, [], nanite, tsrc(el.roof.sill.type))
-    place("sill", sill_name, rotation_z(0.0), sill_t.src.basis, sill_t.src.confidence, tsrc(el.roof.sill.type))
-
-    # ---- conical roof ----------------------------------------------------------
-    sh_t = ctype(el.roof.conical.type)
-    t_v = to_metres(sh_t.thickness) / math.cos(slope)
-    seg_c = el.roof.conical.segments
-
-    def cone_section(a: float):
-        return g.radial_section(a, [(r_ring, z_rt), (R_eave, cone_z(R_eave)), (R_eave, cone_z(R_eave) + t_v), (r_ring, z_rt + t_v)])
-
-    cone_angles = g.angles(stone_a0, stone_a1, seg_c)
-    cone_mesh = g.loft([cone_section(a) for a in cone_angles])
-    hull_step = 2
-    cone_hulls = [g.loft([cone_section(cone_angles[i]), cone_section(cone_angles[min(i + hull_step, seg_c)])]) for i in range(0, seg_c, hull_step)]
-    mat, nanite = material(sh_t)
-    cone_name = model.unique(f"{prefix}_{camel(eid)}_RoofConical", "Roof", cone_mesh, mat, cone_hulls if sh_t.collision else [], nanite, tsrc(el.roof.conical.type))
-    cs = el.roof.conical.src
-    place("roof_conical", cone_name, rotation_z(0.0), cs.basis, cs.confidence, src_dict(cs, type=el.roof.conical.type))
-
-    # ---- compression ring and skylight --------------------------------------
-    ring_t = ctype(el.roof.ring.type)
+    # ---- compression ring and skylight ----
+    ring_t = c.ctype(ring.type)
     w_ring, d_ring = (to_metres(v) for v in ring_t.section)
-    ring_mesh = g.ring(r_ring - w_ring, r_ring, z_rt - d_ring, z_rt, 48)
-    mat, nanite = material(ring_t)
-    ring_name = model.unique(f"{prefix}_{camel(eid)}_CompressionRing", "Structure", ring_mesh, mat, [], nanite, tsrc(el.roof.ring.type))
-    ring_level_src = spec.levels[el.roof.ring.top].src
-    place("ring", ring_name, rotation_z(0.0), "rule", ring_level_src.confidence, src_dict(ring_level_src, note="radius derived from pitch and top of ring"))
+    mat, nanite = c.material(ring_t)
+    ring_name = model.unique(f"{c.prefix}_{camel(eid)}_CompressionRing", "Structure", g.ring(r_ring - w_ring, r_ring, z_rt - d_ring, z_rt, 48), mat, [], nanite, c.tsrc(ring.type))
+    ring_src = c.spec.levels[ring.top].src if ring.top else (ring.src or ring_t.src)
+    c.place("ring", ring_name, rotation_z(0.0), "rule", ring_src.confidence, src_dict(ring_src, note=ring_basis))
+    if roof.skylight is not None:
+        dome_t = c.ctype(roof.skylight.type)
+        mat, nanite = c.material(dome_t)
+        dome_name = model.shared(c.prefix, camel(roof.skylight.type), "Roof", g.dome(r_ring - w_ring / 2, to_metres(dome_t.rise), segments=48, rings=8), mat, [], nanite, c.tsrc(roof.skylight.type))
+        c.place("skylight", dome_name, translation((0.0, 0.0, z_rt)), dome_t.src.basis, dome_t.src.confidence, c.tsrc(roof.skylight.type))
 
-    dome_t = ctype(el.roof.skylight.type)
-    dome_mesh = g.dome(r_ring - w_ring / 2, to_metres(dome_t.rise), segments=48, rings=8)
-    mat, nanite = material(dome_t)
-    dome_name = model.shared(prefix, camel(el.roof.skylight.type), "Roof", dome_mesh, mat, [], nanite, tsrc(el.roof.skylight.type))
-    place("skylight", dome_name, translation((0.0, 0.0, z_rt)), dome_t.src.basis, dome_t.src.confidence, tsrc(el.roof.skylight.type))
-
-    # ---- slab -------------------------------------------------------------------
-    slab_t = ctype(el.slab.type)
-    t_slab = to_metres(slab_t.thickness)
-    R_slab = R_c + to_metres(el.slab.edge_offset) / math.cos(half)
-    glazed_pts = [vertex(k, r=R_slab)[:2] for k in glazed_vertices]
-    arc_pts = [g.polar(R_out, a)[:2] for a in g.angles(stone_a0, stone_a1, seg_w)]
-    slab_mesh = g.prism(glazed_pts + arc_pts, -t_slab, 0.0)
-    slab_hulls = [g.prism([(0.0, 0.0), glazed_pts[i], glazed_pts[i + 1]], -t_slab, 0.0) for i in range(len(glazed_pts) - 1)]
-    pieces = max(1, math.ceil((stone_a1 - stone_a0) / 90.0))
-    for i in range(pieces):
-        a0 = stone_a0 + (stone_a1 - stone_a0) * i / pieces
-        a1 = stone_a0 + (stone_a1 - stone_a0) * (i + 1) / pieces
-        pts = [g.polar(R_out, a)[:2] for a in g.angles(a0, a1, max(2, seg_w // pieces))]
-        slab_hulls.append(g.prism([(0.0, 0.0)] + pts, -t_slab, 0.0))
-    mat, nanite = material(slab_t)
-    slab_name = model.unique(f"{prefix}_{camel(eid)}_Slab", "Ground", slab_mesh, mat, slab_hulls if slab_t.collision else [], nanite, tsrc(el.slab.type))
-    ss = el.slab.src or slab_t.src
-    place("slab", slab_name, rotation_z(0.0), ss.basis, ss.confidence, src_dict(ss, type=el.slab.type))
-
-    # ---- derived values and cross-checks --------------------------------------
+    # ---- derived values and cross-checks ----
     deg = math.degrees
-    model.derived[eid] = {
-        "circumradius": fmt_m(R_c),
-        "apothem": fmt_m(apothem),
-        "eave_roof_surface_above_floor": fmt_m(z_e),
-        "ring_radius": fmt_m(r_ring),
-        "glazed_pitch_deg": round(el.roof.glazed.pitch, 3),
-        "hip_pitch_deg": round(deg(math.atan(tan_hip)), 3),
-        "conical_pitch_deg": round(deg(slope), 3),
-        "conical_eave_radius": fmt_m(R_eave),
-        "door_inset_from_column_cp": fmt_m(inset),
-        "door_width": fmt_m(L_door),
-    }
-    if el.roof.ring.measured_radius is not None:
-        measured = to_metres(el.roof.ring.measured_radius)
+    d = model.derived.setdefault(eid, {})
+    d.update({"circumradius": fmt_m(c.R_c), "apothem": fmt_m(c.apothem), "ring_radius": fmt_m(r_ring), "ring_top_above_floor": fmt_m(z_rt), "conical_pitch_deg": round(deg(slope), 3)})
+    if roof.glazed is not None:
+        d.update({"eave_roof_surface_above_floor": fmt_m(z_e), "glazed_pitch_deg": round(roof.glazed.pitch, 3), "hip_pitch_deg": round(deg(math.atan(tan_hip)), 3)})
+    if arcs:
+        d["conical_eave_radius"] = fmt_m(eave_radius((arcs[0][1] + arcs[0][2]) / 2))
+    if ring.measured_radius is not None:
+        measured = to_metres(ring.measured_radius)
         diff = r_ring - measured
         model.checks.append(
             Check(
                 id=f"{eid}.ring_radius",
                 kind="derived",
                 status="pass" if abs(diff) <= 3 * INCH else "conflict",
-                message=(
-                    f"compression ring radius derived from the {el.roof.glazed.pitch:g} degree pitch and top of ring is {fmt_m(r_ring)}; "
-                    f"scaled off the elevation it is about {fmt_m(measured)} ({diff / INCH:+.1f} in). Geometry uses the derived value."
-                ),
-                values={"derived": fmt_m(r_ring), "measured": fmt_m(measured), "difference_in": round(diff / INCH, 2)},
+                message=f"{eid}: compression ring radius ({ring_basis}) is {fmt_m(r_ring)}; scaled off the sheet it is about {fmt_m(measured)} ({diff / INCH:+.1f} in). Geometry uses {fmt_m(r_ring)}.",
+                values={"used": fmt_m(r_ring), "measured": fmt_m(measured), "difference_in": round(diff / INCH, 2)},
             )
         )
-    if el.roof.conical.nominal_pitch is not None:
-        diff_deg = deg(slope) - el.roof.conical.nominal_pitch
+    if roof.conical.nominal_pitch is not None and arcs:
+        diff_deg = deg(slope) - roof.conical.nominal_pitch
         model.checks.append(
             Check(
                 id=f"{eid}.conical_pitch",
                 kind="derived",
                 status="pass" if abs(diff_deg) <= 1.0 else "conflict",
-                message=(
-                    f"conical roof pitch derived from top of ring and top of masonry is {deg(slope):.1f} degrees; "
-                    f"the general note says {el.roof.conical.nominal_pitch:g} ({diff_deg:+.1f}). Geometry follows the dimensioned levels."
-                ),
-                values={"derived_deg": round(deg(slope), 3), "note_deg": el.roof.conical.nominal_pitch},
+                message=f"{eid}: conical roof pitch {slope_basis} is {deg(slope):.1f} degrees; the general note says {roof.conical.nominal_pitch:g} ({diff_deg:+.1f}). Geometry follows the dimensioned levels.",
+                values={"derived_deg": round(deg(slope), 3), "note_deg": roof.conical.nominal_pitch},
             )
         )
-    step_at_column = cone_z(R_c) - z_e
-    model.checks.append(
-        Check(
-            id=f"{eid}.hip_step",
-            kind="derived",
-            status="pass" if abs(step_at_column) <= INCH else "conflict",
-            message=(
-                f"where the glass roof meets the conical roof, the two surfaces differ by {step_at_column / INCH:+.1f} in at the end columns "
-                f"(glazed hips at {deg(math.atan(tan_hip)):.1f} degrees, cone at {deg(slope):.1f})"
-            ),
-            values={"step_in": round(step_at_column / INCH, 2)},
+    if roof.glazed is not None and arcs and roof.conical.span == "rest":
+        step_at_column = cone_z(c.R_c) - z_e
+        model.checks.append(
+            Check(
+                id=f"{eid}.hip_step",
+                kind="derived",
+                status="pass" if abs(step_at_column) <= INCH else "conflict",
+                message=f"{eid}: where the glass roof meets the conical roof, the two surfaces differ by {step_at_column / INCH:+.1f} in at the end columns (glazed hips at {deg(math.atan(tan_hip)):.1f} degrees, cone at {deg(slope):.1f})",
+                values={"step_in": round(step_at_column / INCH, 2)},
+            )
         )
-    )
 
 
-def _close_check(cid: str, what: str, measured: float, expected: float, tol: float) -> Check:
+def close_check(cid: str, what: str, measured: float, expected: float, tol: float) -> Check:
     diff = measured - expected
     return Check(
         id=cid,
@@ -393,7 +532,3 @@ def _close_check(cid: str, what: str, measured: float, expected: float, tol: flo
         message=f"{what}: {fmt_m(measured)} vs {fmt_m(expected)} ({diff / INCH:+.2f} in)",
         values={"measured": fmt_m(measured), "expected": fmt_m(expected), "difference_in": round(diff / INCH, 3)},
     )
-
-
-Expander = Callable[[BuildingSpec, RadialPavilion, Model], None]
-EXPANDERS: dict[str, Expander] = {"radial_pavilion": expand_pavilion}

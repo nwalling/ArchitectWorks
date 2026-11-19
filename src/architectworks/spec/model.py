@@ -57,6 +57,7 @@ class Sheet(Strict):
     title: str
     file: str | None = None
     scale: str | None = None
+    calibration: str | None = Field(None, description="pixel positions of named points, for fitting the sheet to the plan")
     note: str | None = None
 
 
@@ -95,9 +96,18 @@ class ComponentType(Strict):
     height: Length | None = None
     section: tuple[Length, Length] | None = Field(None, description="width, depth")
     thickness: Length | None = None
+    facing: Length | None = Field(None, description="walls: masonry facing outside the dimensioned face")
     rise: Length | None = None
     collision: bool = True
     src: Source
+
+    def wall_radii(self, r_face: float, to_m) -> tuple[float, float, float]:
+        """(inside, outside, bearing centreline) radii in metres for a curved
+        wall whose dimensioned face is at ``r_face`` metres: the wall's
+        thickness runs inward from that face, any facing outward."""
+        t = to_m(self.thickness)
+        f = to_m(self.facing) if self.facing is not None else 0.0
+        return r_face - t, r_face + f, r_face - t / 2
 
     @model_validator(mode="after")
     def _fields_for_kind(self) -> "ComponentType":
@@ -130,7 +140,7 @@ class Types(Strict):
 class PlanPolygon(Strict):
     sides: int = Field(ge=3, le=12)
     side: Length
-    rotation: Angle
+    rotation: Angle = Field(description="angle of vertex 0, counter-clockwise from plan +X")
     src: Source
 
 
@@ -143,11 +153,16 @@ class HeaderSpec(TypeRef):
     top: str = Field(description="level id of the top of header")
 
 
-class StoneWallSpec(TypeRef):
+class StoneArcSpec(TypeRef):
+    """A masonry arc about the pavilion's center point. Angles are plan
+    angles, counter-clockwise from +X; the arc runs from ``start`` to ``end``."""
+
     radius_outside: Length
+    start: Angle
+    end: Angle
     top: str = Field(description="level id of the top of masonry")
-    returns: bool = True
-    segments: int = Field(48, ge=8)
+    returns: bool = Field(False, description="add straight returns from the arc ends to the nearest columns")
+    segments_per_90: int = Field(24, ge=4)
 
 
 class SlabSpec(TypeRef):
@@ -163,7 +178,8 @@ class GlazedRoofSpec(Strict):
 class ConicalRoofSpec(Strict):
     type: str
     eave_overhang: Length
-    segments: int = Field(24, ge=4)
+    span: Literal["rest", "arcs"] = Field("rest", description="cover every non-glazed angle, or only the stone arcs")
+    max_step: Angle = Field(7.5, description="largest angle between roof sections")
     nominal_pitch: Angle | None = Field(None, description="pitch stated in a general note, for cross-checking")
     src: Source
 
@@ -173,9 +189,16 @@ class SillSpec(TypeRef):
 
 
 class RingSpec(TypeRef):
-    top: str = Field(description="level id of the top of the compression ring")
+    top: str | None = Field(None, description="level id of the top of the compression ring")
+    radius: Length | None = Field(None, description="outside radius, when it is given rather than derived")
     measured_radius: Length | None = Field(None, description="radius scaled off a sheet, for cross-checking")
     measured_src: Source | None = None
+
+    @model_validator(mode="after")
+    def _one_of(self) -> "RingSpec":
+        if self.top is None and self.radius is None:
+            raise ValueError("a ring needs its top level, its radius, or both")
+        return self
 
 
 class RafterSpec(TypeRef):
@@ -184,12 +207,26 @@ class RafterSpec(TypeRef):
 
 
 class RoofSpec(Strict):
-    glazed: GlazedRoofSpec
+    glazed: GlazedRoofSpec | None = None
     conical: ConicalRoofSpec
     sill: SillSpec
     rafters: RafterSpec
     ring: RingSpec
-    skylight: TypeRef
+    skylight: TypeRef | None = None
+
+
+def contiguous_run(sides: list[int], n: int) -> tuple[int, int]:
+    """(first side, count) of a run of polygon sides that may wrap past n-1."""
+    if not sides:
+        return 0, 0
+    s = sorted(set(sides))
+    if len(s) == n:
+        return 0, n
+    for start in s:
+        run = [(start + i) % n for i in range(len(s))]
+        if sorted(run) == s:
+            return start, len(s)
+    raise ValueError(f"glazed sides {sides} are not one contiguous run")
 
 
 class RadialPavilion(Strict):
@@ -199,13 +236,13 @@ class RadialPavilion(Strict):
     center: str
     floor: str
     plan: PlanPolygon
-    glazed_sides: list[int]
+    glazed_sides: list[int] = []
     columns: TypeRef
     header: HeaderSpec
     doors: TypeRef
-    stone_wall: StoneWallSpec
+    stone_arcs: list[StoneArcSpec] = []
     slab: SlabSpec
-    roof: RoofSpec
+    roof: RoofSpec | None = None
 
     @model_validator(mode="after")
     def _sides(self) -> "RadialPavilion":
@@ -213,13 +250,66 @@ class RadialPavilion(Strict):
         bad = [s for s in self.glazed_sides if not 0 <= s < n]
         if bad:
             raise ValueError(f"glazed_sides {bad} outside 0..{n - 1}")
-        g = sorted(self.glazed_sides)
-        if g != list(range(g[0], g[0] + len(g))):
-            raise ValueError("glazed_sides must be one contiguous run (phase 0)")
+        contiguous_run(self.glazed_sides, n)
+        if self.roof and self.roof.glazed and not self.glazed_sides:
+            raise ValueError("a glazed roof needs glazed sides")
         return self
 
 
-Element = Annotated[RadialPavilion, Field(discriminator="pattern")]
+class StoneRing(Strict):
+    """A free-standing masonry arc or ring: a stair tower, a hearth, a curved
+    room wall that belongs to no hexagon."""
+
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    pattern: Literal["stone_ring"]
+    name: str | None = None
+    center: str
+    floor: str
+    type: str
+    radius_outside: Length
+    start: Angle = 0.0
+    end: Angle = 360.0
+    top: str
+    footprint: Literal["none", "sector", "circle"] = Field("sector", description="what this element adds to its floor slab")
+    slab: TypeRef | None = None
+    segments_per_90: int = Field(24, ge=4)
+    src: Source
+
+
+class RoundMass(Strict):
+    """A solid cylinder of masonry: a flue or a round core."""
+
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    pattern: Literal["round_mass"]
+    name: str | None = None
+    center: str
+    floor: str
+    type: str
+    radius: Length
+    top: str
+    src: Source
+
+
+class Link(Strict):
+    """A straight glazed or masonry wall between two named points, such as
+    ``pav_tl.v0`` (a pavilion vertex), ``pav_tl.arc0.start`` (an arc end) or a
+    control point id."""
+
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    pattern: Literal["link"]
+    kind: Literal["glazed", "masonry"]
+    start: str
+    end: str
+    floor: str
+    type: str = Field(description="door panel type for glazed links, wall type for masonry")
+    header: HeaderSpec | None = None
+    top: str | None = Field(None, description="level id of the top of a masonry link")
+    inset: Length = Fraction(6)
+    lettered: Length | None = Field(None, description="length written on the sheet, for cross-checking")
+    src: Source
+
+
+Element = Annotated[RadialPavilion | StoneRing | RoundMass | Link, Field(discriminator="pattern")]
 
 
 # ---- checks and open items --------------------------------------------------
@@ -233,6 +323,7 @@ class Chain(Strict):
     parts: list[Length] = Field(min_length=2)
     overall: Length
     tolerance: Length = Fraction(1, 16)
+    note: str | None = None
 
 
 class RuleCheck(Strict):
@@ -256,6 +347,10 @@ class OpenItem(Strict):
     effect: str
 
 
+class Floors(Strict):
+    gap_fill: Length = Field(Fraction(0), description="close gaps narrower than twice this between footprints on one level")
+
+
 class BuildingSpec(Strict):
     spec_version: str
     building: Building
@@ -266,6 +361,7 @@ class BuildingSpec(Strict):
     control: dict[str, ControlPoint]
     types: Types
     elements: list[Element]
+    floors: Floors = Floors()
     checks: Checks = Checks()
     open_items: list[OpenItem] = []
 
@@ -280,6 +376,18 @@ class BuildingSpec(Strict):
             if src and src.sheet and src.sheet not in self.sheets:
                 errors.append(f"{where}: unknown sheet {src.sheet!r}")
 
+        def level_ok(lvl: str | None, where: str) -> None:
+            if lvl is not None and lvl not in self.levels:
+                errors.append(f"{where}: unknown level {lvl!r}")
+
+        def type_ok(ref: str | None, kind: str, where: str) -> None:
+            if ref is None:
+                return
+            if ref not in comps:
+                errors.append(f"{where}: unknown type {ref!r}")
+            elif comps[ref].kind != kind:
+                errors.append(f"{where}: type {ref!r} is a {comps[ref].kind}, expected a {kind}")
+
         for name, c in comps.items():
             if c.material not in mats:
                 errors.append(f"types.components.{name}: unknown material {c.material!r}")
@@ -288,30 +396,52 @@ class BuildingSpec(Strict):
             src_ok(c.src, f"types.components.{name}")
         for name, lv in self.levels.items():
             src_ok(lv.src, f"levels.{name}")
+        ids = [el.id for el in self.elements]
+        for dup in sorted({i for i in ids if ids.count(i) > 1}):
+            errors.append(f"elements: id {dup!r} used twice")
         for el in self.elements:
             w = f"elements.{el.id}"
+            level_ok(el.floor, w)
+            if isinstance(el, Link):
+                type_ok(el.type, "panel" if el.kind == "glazed" else "wall", w)
+                if el.header:
+                    type_ok(el.header.type, "beam", w)
+                    level_ok(el.header.top, w)
+                level_ok(el.top, w)
+                if el.kind == "masonry" and el.top is None:
+                    errors.append(f"{w}: a masonry link needs a top level")
+                continue
             if el.center not in self.control:
                 errors.append(f"{w}: unknown control point {el.center!r}")
-            for lvl in (el.floor, el.header.top, el.stone_wall.top, el.roof.ring.top):
-                if lvl not in self.levels:
-                    errors.append(f"{w}: unknown level {lvl!r}")
-            for ref, kind in (
-                (el.columns.type, "column"),
-                (el.header.type, "beam"),
-                (el.doors.type, "panel"),
-                (el.stone_wall.type, "wall"),
-                (el.slab.type, "slab"),
-                (el.roof.glazed.panel, "panel"),
-                (el.roof.conical.type, "roof"),
-                (el.roof.sill.type, "beam"),
-                (el.roof.rafters.type, "beam"),
-                (el.roof.ring.type, "ring"),
-                (el.roof.skylight.type, "dome"),
-            ):
-                if ref not in comps:
-                    errors.append(f"{w}: unknown type {ref!r}")
-                elif comps[ref].kind != kind:
-                    errors.append(f"{w}: type {ref!r} is a {comps[ref].kind}, expected a {kind}")
+            if isinstance(el, StoneRing):
+                type_ok(el.type, "wall", w)
+                level_ok(el.top, w)
+                if el.slab:
+                    type_ok(el.slab.type, "slab", w)
+                continue
+            if isinstance(el, RoundMass):
+                type_ok(el.type, "wall", w)
+                level_ok(el.top, w)
+                continue
+            level_ok(el.header.top, w)
+            type_ok(el.columns.type, "column", w)
+            type_ok(el.header.type, "beam", w)
+            type_ok(el.doors.type, "panel", w)
+            type_ok(el.slab.type, "slab", w)
+            for a in el.stone_arcs:
+                type_ok(a.type, "wall", w)
+                level_ok(a.top, w)
+            if el.roof:
+                r = el.roof
+                level_ok(r.ring.top, w)
+                type_ok(r.glazed.panel if r.glazed else None, "panel", w)
+                type_ok(r.conical.type, "roof", w)
+                type_ok(r.sill.type, "beam", w)
+                type_ok(r.rafters.type, "beam", w)
+                type_ok(r.ring.type, "ring", w)
+                type_ok(r.skylight.type if r.skylight else None, "dome", w)
+                if not r.glazed and (r.ring.top is None or r.ring.radius is None) and not el.stone_arcs:
+                    errors.append(f"{w}: without a glazed roof the ring needs both its top and its radius, or a stone arc to bear on")
         for ch in self.checks.chains:
             if ch.sheet not in self.sheets:
                 errors.append(f"checks.chains: unknown sheet {ch.sheet!r}")

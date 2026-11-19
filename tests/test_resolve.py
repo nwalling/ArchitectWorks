@@ -93,7 +93,7 @@ def test_checks(resolved):
 
 def test_assumed_elements_are_marked(resolved):
     assumed = {p["id"] for p in resolved["placements"] if p["basis"] == "assumed"}
-    assert {"pav_a.wall.return.start", "pav_a.wall.return.end", "pav_a.slab"} <= assumed
+    assert {"pav_a.wall.return.start", "pav_a.wall.return.end", "slab.ff_bedroom"} <= assumed
 
 
 def test_resolution_is_deterministic(spec, resolved):

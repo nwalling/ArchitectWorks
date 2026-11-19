@@ -146,3 +146,34 @@ def test_transformed_box_bounds_rotated():
     bmin, bmax = x.transformed_box_bounds(m, (0, 0, 0), (2, 1, 1))
     assert bmin == pytest.approx((-1, 0, 0))
     assert bmax == pytest.approx((0, 2, 1))
+
+
+def test_extrude_polygon_with_a_hole():
+    from shapely.geometry import Point, Polygon
+
+    from architectworks.resolve.floors import extrude
+
+    outer = Polygon([(0, 0), (6, 0), (6, 4), (0, 4)])
+    shape = outer.difference(Point(3, 2).buffer(1, quad_segs=16))
+    m = extrude(shape, -0.1, 0.0)
+    assert g.is_closed(m)
+    assert g.volume(m) == pytest.approx(shape.area * 0.1, rel=1e-6)
+
+
+def test_glazed_run_may_wrap():
+    from architectworks.spec.model import contiguous_run
+
+    assert contiguous_run([5, 0, 1], 6) == (5, 3)
+    assert contiguous_run([0, 1, 2], 6) == (0, 3)
+    assert contiguous_run([], 6) == (0, 0)
+    with pytest.raises(ValueError):
+        contiguous_run([0, 2], 6)
+
+
+def test_arc_spans_normalise():
+    from architectworks.resolve.pavilion import in_span, norm_span
+
+    assert norm_span(238, 303) == (238, 303)
+    assert norm_span(330, 30) == (330, 390)
+    assert norm_span(-90, 90) == (270, 450)
+    assert in_span(10, 330, 390) and not in_span(100, 330, 390)

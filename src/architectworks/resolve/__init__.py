@@ -10,13 +10,24 @@ from architectworks.geom import mesh as g
 from architectworks.geom.xform import frame, rotation_z, matmul, translation
 from architectworks.resolve.checks import run_spec_checks
 from architectworks.resolve.model import CATEGORIES, Model, Placement
-from architectworks.resolve.pavilion import EXPANDERS
+from architectworks.resolve.elements import expand_link, expand_round_mass, expand_stone_ring
+from architectworks.resolve.floors import build_floors
+from architectworks.resolve.pavilion import expand_pavilion
 from architectworks.spec.model import BuildingSpec
+from architectworks.units import to_metres
 
 MARKER_MATERIAL = {"unreal": "M_AW_Marker", "color": "#e0b000", "translucent": False, "opacity": 1.0}
 # Where the handedness marker stands, in Blender space (metres, degrees about Z).
 MARKER_AT = (-6.0, 9.0, 0.0)
 MARKER_YAW = 30.0
+
+
+EXPANDERS = {
+    "radial_pavilion": expand_pavilion,
+    "stone_ring": expand_stone_ring,
+    "round_mass": expand_round_mass,
+    "link": expand_link,
+}
 
 
 def marker_mesh() -> tuple[g.Mesh, list[g.Mesh]]:
@@ -39,8 +50,12 @@ def _hex_to_rgba(color: str, opacity: float) -> list[float]:
 def resolve(spec: BuildingSpec, *, marker: bool = True) -> dict[str, Any]:
     model = Model()
     model.checks.extend(run_spec_checks(spec))
-    for el in spec.elements:
+    for name, cp in spec.control.items():
+        model.points[name] = (to_metres(cp.at[0]), to_metres(cp.at[1]))
+    # links refer to points that other elements define, so they go last
+    for el in sorted(spec.elements, key=lambda e: e.pattern == "link"):
         EXPANDERS[el.pattern](spec, el, model)
+    build_floors(spec, model)
 
     materials = {m.unreal: {"color": _hex_to_rgba(m.color, m.opacity), "translucent": m.translucent} for m in spec.types.materials.values()}
     if marker:
@@ -74,6 +89,7 @@ def resolve(spec: BuildingSpec, *, marker: bool = True) -> dict[str, Any]:
         "placements": [p.to_json() for p in model.placements],
         "checks": [c.to_json() for c in model.checks],
         "derived": model.derived,
+        "points": {k: [round(x, 6) + 0.0, round(y, 6) + 0.0] for k, (x, y) in sorted(model.points.items())},
         "open_items": [o.model_dump(mode="json", exclude_none=True) for o in spec.open_items],
     }
 

@@ -147,12 +147,14 @@ elements:
     doors:
       type: door_glass
       src: {sheet: elevations, basis: measured, confidence: low, quote: "TEMP. GLASS SLIDING DOOR"}
-    stone_wall:
-      type: wall_stone
-      radius_outside: 11'-8"
-      top: t_o_masonry_bedroom
-      returns: true
-      src: {sheet: foundation, basis: dimensioned, quote: "11'-8\" TYP. RAD. TO O.S. FACE OF WALL"}
+    stone_arcs:
+      - type: wall_stone
+        radius_outside: 11'-8"
+        start: 180deg
+        end: 360deg
+        top: t_o_masonry_bedroom
+        returns: true
+        src: {sheet: foundation, basis: dimensioned, quote: "11'-8\" TYP. RAD. TO O.S. FACE OF WALL", note: "phase 0 stand-in: the arc closes the pavilion; on the real plan it spans less"}
     slab:
       type: slab_4in
       edge_offset: 8"
@@ -165,6 +167,7 @@ elements:
       conical:
         type: roof_shingle
         eave_overhang: 1'-0"
+        max_step: 7.5deg
         nominal_pitch: 30deg
         src: {sheet: elevations, basis: measured, note: overhang scaled off the NW elevation}
       sill: {type: sill_2x6}

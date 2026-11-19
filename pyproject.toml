@@ -8,10 +8,12 @@ version = "0.1.0"
 description = "Turn an architect's blueprint set into a Blender model that exports cleanly to Unreal Engine."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["pydantic>=2.7", "pyyaml>=6"]
+dependencies = ["pydantic>=2.7", "pyyaml>=6", "shapely>=2.1"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# Fitting photographed sheets to the plan and checking the model against them.
+sheets = ["opencv-python-headless>=4.10", "numpy>=1.26"]
 # Blender as a Python module. The wheel exists only for Python 3.13 on
 # Linux x86-64, Windows and Apple silicon; elsewhere point BLENDER at a
 # Blender 5.2 LTS install instead.

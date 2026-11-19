@@ -74,6 +74,18 @@ class Placement:
 
 
 @dataclass
+class Footprint:
+    """An element's share of its floor slab, in plan metres (world XY)."""
+
+    element: str
+    level: str
+    slab_type: str
+    polygon: Any  # shapely Polygon
+    hulls: list[list[tuple[float, float]]]  # convex outlines for collision
+    source: dict[str, Any]
+
+
+@dataclass
 class Check:
     id: str
     kind: str  # chain | rule | derived
@@ -99,6 +111,8 @@ class Model:
         self.placements: list[Placement] = []
         self.checks: list[Check] = []
         self.derived: dict[str, dict[str, Any]] = {}
+        self.points: dict[str, tuple[float, float]] = {}
+        self.footprints: list[Footprint] = []
 
     def _validate(self, name: str, mesh: Mesh, collision: list[Mesh]) -> None:
         if not is_closed(mesh):

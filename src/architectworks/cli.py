@@ -24,10 +24,38 @@ def default_out(spec_path: Path) -> Path:
     return spec_path.parent / "out" / spec_path.stem
 
 
-def cmd_resolve(spec_path: Path, out: Path, marker: bool = True) -> dict:
+def cmd_sheets(spec_path: Path, spec, resolved: dict, out: Path) -> list[dict]:
+    """Fit every calibrated sheet, check the model against it, and hand the
+    straightened sheet to Blender as a reference plane."""
+    reports = []
+    for sid, sheet in spec.sheets.items():
+        if not sheet.calibration:
+            continue
+        try:
+            from architectworks import sheets
+        except ImportError as err:
+            print(f"  skipping sheet checks: {err}")
+            return reports
+        calib_path = spec_path.parent / sheet.calibration
+        calib = sheets.fit(calib_path, resolved["points"])
+        report = sheets.overlay(resolved, calib, calib_path.parent / calib["sheet"], out / "sheets")
+        reports.append(report)
+        f = report["fit"]
+        print(f"  sheet {sid}: fitted on {f['points_used']} points, residual {f['residual_in']['mean']}\" mean, {f['residual_in']['max']}\" max ({f['residual_in']['worst']})")
+        print(f"    model on ink: " + ", ".join(f"{k} {v:.0%}" for k, v in report["on_ink_by_kind"].items()) + f"; overlay {out / 'sheets' / (Path(calib['sheet']).stem + '.overlay.jpg')}")
+        x0, y0, x1, y1 = report["plan_bounds_m"]
+        resolved.setdefault("references", []).append(
+            {"sheet": sid, "image": str((out / "sheets" / (Path(calib["sheet"]).stem + ".rectified.png")).resolve()), "min": [x0, y0], "max": [x1, y1], "z": -0.15}
+        )
+    return reports
+
+
+def cmd_resolve(spec_path: Path, out: Path, marker: bool = True, sheets: bool = True) -> dict:
     spec = load_spec(spec_path)
     resolved = resolve(spec, marker=marker)
     out.mkdir(parents=True, exist_ok=True)
+    if sheets:
+        cmd_sheets(spec_path, spec, resolved, out)
     (out / "resolved.json").write_text(json.dumps(resolved, separators=(",", ":"), sort_keys=False) + "\n", encoding="utf-8")
     counts = Counter(c["status"] for c in resolved["checks"])
     print(f"resolved {spec_path} -> {out / 'resolved.json'}")
@@ -85,6 +113,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("spec", type=Path)
     p.add_argument("-o", "--out", type=Path)
     p.add_argument("--no-marker", action="store_true")
+    p.add_argument("--no-sheets", action="store_true", help="skip fitting and checking calibrated sheets")
 
     p = sub.add_parser("build", help="resolve, write the Unreal bundle, build the .blend and export")
     p.add_argument("spec", type=Path)
@@ -93,6 +122,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--samples", type=int, default=48)
     p.add_argument("--no-blender", action="store_true", help="stop after the manifest")
     p.add_argument("--no-marker", action="store_true")
+    p.add_argument("--no-sheets", action="store_true", help="skip fitting and checking calibrated sheets")
 
     p = sub.add_parser("schema", help="print the Building Spec JSON Schema")
     p.add_argument("-o", "--out", type=Path)
@@ -107,7 +137,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     out = args.out or default_out(args.spec)
-    resolved = cmd_resolve(args.spec, out, marker=not args.no_marker)
+    resolved = cmd_resolve(args.spec, out, marker=not args.no_marker, sheets=not args.no_sheets)
     if args.cmd == "resolve":
         return 0
     manifest = write_bundle(resolved, out)

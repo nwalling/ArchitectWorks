@@ -47,6 +47,7 @@ FBX_SETTINGS = {
 COMPONENTS = "AW_COMPONENTS"
 BUILDING = "BUILDING"
 ASSUMED = "ASSUMED"
+REFERENCE = "REFERENCE"
 
 
 def log(msg: str) -> None:
@@ -175,12 +176,43 @@ def build(resolved: dict, out_dir: str) -> dict:
         ob["aw_confidence"] = p["confidence"]
         ob["aw_source"] = json.dumps(p["source"], sort_keys=True)
 
+    refs = resolved.get("references", [])
+    if refs:
+        ref_coll = new_collection(REFERENCE, scene.collection)
+        ref_coll.hide_render = True
+        for ref in refs:
+            add_reference_plane(ref_coll, ref)
+
     scene["aw_building"] = resolved["building"]["id"]
     scene["aw_generator"] = resolved["generator"]
     path = os.path.join(out_dir, "generated.blend")
     bpy.ops.wm.save_as_mainfile(filepath=path, relative_remap=True)
     log(f"saved {path}")
     return {"blend": path, "objects": len(resolved["placements"]), "components": len(resolved["components"])}
+
+
+def add_reference_plane(coll: bpy.types.Collection, ref: dict) -> None:
+    """A straightened sheet lying under the model at true scale."""
+    (x0, y0), (x1, y1), z = ref["min"], ref["max"], ref["z"]
+    me = bpy.data.meshes.new(f"REF_{ref['sheet']}")
+    me.from_pydata([(x0, y0, z), (x1, y0, z), (x1, y1, z), (x0, y1, z)], [], [(0, 1, 2, 3)])
+    me.uv_layers.new(name="UVMap").data.foreach_set("uv", [0, 0, 1, 0, 1, 1, 0, 1])
+    mat = bpy.data.materials.new(f"REF_{ref['sheet']}")
+    try:
+        mat.use_nodes = True
+    except AttributeError:
+        pass
+    nodes = mat.node_tree.nodes
+    tex = nodes.new("ShaderNodeTexImage")
+    tex.image = bpy.data.images.load(ref["image"], check_existing=True)
+    bsdf = nodes.get("Principled BSDF")
+    if bsdf is not None:
+        mat.node_tree.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+    me.materials.append(mat)
+    ob = bpy.data.objects.new(f"REF_{ref['sheet']}", me)
+    ob.hide_select = True
+    ob["aw_reference"] = ref["sheet"]
+    coll.objects.link(ob)
 
 
 # ---- export ----------------------------------------------------------------
@@ -240,15 +272,16 @@ def render_preview(resolved: dict, out_dir: str, samples: int) -> str:
             continue
         m = p["matrix"]
         pts.append((m[0][3], m[1][3], m[2][3]))
-    cx = sum(p[0] for p in pts) / len(pts)
-    cy = sum(p[1] for p in pts) / len(pts)
+    xs, ys = [p[0] for p in pts], [p[1] for p in pts]
+    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+    span = max(max(xs) - min(xs), max(ys) - min(ys), 7.7)
     target = Vector((cx, cy, 1.6))
 
     cam_data = bpy.data.cameras.new("PreviewCamera")
     cam_data.lens = 30
     cam = bpy.data.objects.new("PreviewCamera", cam_data)
     scene.collection.objects.link(cam)
-    cam.location = target + Vector((9.0, 11.5, 4.2))
+    cam.location = target + Vector((9.0, 11.5, 4.2)) * max(1.0, 0.72 * span / 7.7)
     cam.rotation_euler = (target - cam.location).to_track_quat("-Z", "Y").to_euler()
     scene.camera = cam
 
@@ -260,7 +293,8 @@ def render_preview(resolved: dict, out_dir: str, samples: int) -> str:
     scene.collection.objects.link(sun)
 
     ground = bpy.data.meshes.new("PreviewGround")
-    ground.from_pydata([(-40, -40, -0.11), (40, -40, -0.11), (40, 40, -0.11), (-40, 40, -0.11)], [], [(0, 1, 2, 3)])
+    g0 = 6 * span
+    ground.from_pydata([(cx - g0, cy - g0, -0.11), (cx + g0, cy - g0, -0.11), (cx + g0, cy + g0, -0.11), (cx - g0, cy + g0, -0.11)], [], [(0, 1, 2, 3)])
     gmat = bpy.data.materials.new("PreviewGround")
     gmat.diffuse_color = (0.42, 0.40, 0.34, 1.0)
     try:
@@ -295,10 +329,23 @@ def render_preview(resolved: dict, out_dir: str, samples: int) -> str:
     scene.render.film_transparent = False
     scene.view_settings.view_transform = "Standard"
     scene.view_settings.exposure = -0.2
-    path = os.path.join(out_dir, "preview", resolved["building"]["id"] + ".png")
-    scene.render.filepath = path
+    stem = os.path.join(out_dir, "preview", resolved["building"]["id"])
+    scene.render.filepath = stem + ".png"
     bpy.ops.render.render(write_still=True)
-    return path
+
+    # straight down, orthographic, north (plan +Y) up: compare with the plan sheet
+    top_data = bpy.data.cameras.new("PreviewTop")
+    top_data.type = "ORTHO"
+    top_data.ortho_scale = span * 1.35
+    top = bpy.data.objects.new("PreviewTop", top_data)
+    scene.collection.objects.link(top)
+    top.location = (cx, cy, 40.0)
+    top.rotation_euler = (0.0, 0.0, 0.0)
+    scene.camera = top
+    scene.render.resolution_x, scene.render.resolution_y = 1200, 1200
+    scene.render.filepath = stem + "-top.png"
+    bpy.ops.render.render(write_still=True)
+    return stem + ".png"
 
 
 # ---- verification -------------------------------------------------------------

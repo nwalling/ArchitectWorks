@@ -78,6 +78,18 @@
      ],
      "default": "1/16",
      "title": "Tolerance"
+    },
+    "note": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Note"
     }
    },
    "required": [
@@ -217,6 +229,23 @@
      "default": null,
      "title": "Thickness"
     },
+    "facing": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "walls: masonry facing outside the dimensioned face",
+     "title": "Facing"
+    },
     "rise": {
      "anyOf": [
       {
@@ -269,11 +298,21 @@
      ],
      "title": "Eave Overhang"
     },
-    "segments": {
-     "default": 24,
-     "minimum": 4,
-     "title": "Segments",
-     "type": "integer"
+    "span": {
+     "default": "rest",
+     "description": "cover every non-glazed angle, or only the stone arcs",
+     "enum": [
+      "rest",
+      "arcs"
+     ],
+     "title": "Span",
+     "type": "string"
+    },
+    "max_step": {
+     "default": 7.5,
+     "description": "largest angle between roof sections",
+     "title": "Max Step",
+     "type": "number"
     },
     "nominal_pitch": {
      "anyOf": [
@@ -342,6 +381,27 @@
     "src"
    ],
    "title": "ControlPoint",
+   "type": "object"
+  },
+  "Floors": {
+   "additionalProperties": false,
+   "properties": {
+    "gap_fill": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      }
+     ],
+     "default": "0",
+     "description": "close gaps narrower than twice this between footprints on one level",
+     "title": "Gap Fill"
+    }
+   },
+   "title": "Floors",
    "type": "object"
   },
   "GlazedRoofSpec": {
@@ -422,6 +482,116 @@
     "src"
    ],
    "title": "Level",
+   "type": "object"
+  },
+  "Link": {
+   "additionalProperties": false,
+   "description": "A straight glazed or masonry wall between two named points, such as\n``pav_tl.v0`` (a pavilion vertex), ``pav_tl.arc0.start`` (an arc end) or a\ncontrol point id.",
+   "properties": {
+    "id": {
+     "pattern": "^[a-z][a-z0-9_]*$",
+     "title": "Id",
+     "type": "string"
+    },
+    "pattern": {
+     "const": "link",
+     "title": "Pattern",
+     "type": "string"
+    },
+    "kind": {
+     "enum": [
+      "glazed",
+      "masonry"
+     ],
+     "title": "Kind",
+     "type": "string"
+    },
+    "start": {
+     "title": "Start",
+     "type": "string"
+    },
+    "end": {
+     "title": "End",
+     "type": "string"
+    },
+    "floor": {
+     "title": "Floor",
+     "type": "string"
+    },
+    "type": {
+     "description": "door panel type for glazed links, wall type for masonry",
+     "title": "Type",
+     "type": "string"
+    },
+    "header": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/HeaderSpec"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "top": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "level id of the top of a masonry link",
+     "title": "Top"
+    },
+    "inset": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      }
+     ],
+     "default": "6",
+     "title": "Inset"
+    },
+    "lettered": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "length written on the sheet, for cross-checking",
+     "title": "Lettered"
+    },
+    "src": {
+     "$ref": "#/$defs/Source"
+    }
+   },
+   "required": [
+    "id",
+    "pattern",
+    "kind",
+    "start",
+    "end",
+    "floor",
+    "type",
+    "src"
+   ],
+   "title": "Link",
    "type": "object"
   },
   "Material": {
@@ -535,6 +705,7 @@
      "title": "Side"
     },
     "rotation": {
+     "description": "angle of vertex 0, counter-clockwise from plan +X",
      "title": "Rotation",
      "type": "number"
     },
@@ -649,6 +820,7 @@
      "$ref": "#/$defs/PlanPolygon"
     },
     "glazed_sides": {
+     "default": [],
      "items": {
       "type": "integer"
      },
@@ -664,14 +836,27 @@
     "doors": {
      "$ref": "#/$defs/TypeRef"
     },
-    "stone_wall": {
-     "$ref": "#/$defs/StoneWallSpec"
+    "stone_arcs": {
+     "default": [],
+     "items": {
+      "$ref": "#/$defs/StoneArcSpec"
+     },
+     "title": "Stone Arcs",
+     "type": "array"
     },
     "slab": {
      "$ref": "#/$defs/SlabSpec"
     },
     "roof": {
-     "$ref": "#/$defs/RoofSpec"
+     "anyOf": [
+      {
+       "$ref": "#/$defs/RoofSpec"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
     }
    },
    "required": [
@@ -680,13 +865,10 @@
     "center",
     "floor",
     "plan",
-    "glazed_sides",
     "columns",
     "header",
     "doors",
-    "stone_wall",
-    "slab",
-    "roof"
+    "slab"
    ],
    "title": "RadialPavilion",
    "type": "object"
@@ -745,9 +927,34 @@
      "default": null
     },
     "top": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
      "description": "level id of the top of the compression ring",
-     "title": "Top",
-     "type": "string"
+     "title": "Top"
+    },
+    "radius": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "outside radius, when it is given rather than derived",
+     "title": "Radius"
     },
     "measured_radius": {
      "anyOf": [
@@ -779,8 +986,7 @@
     }
    },
    "required": [
-    "type",
-    "top"
+    "type"
    ],
    "title": "RingSpec",
    "type": "object"
@@ -789,7 +995,15 @@
    "additionalProperties": false,
    "properties": {
     "glazed": {
-     "$ref": "#/$defs/GlazedRoofSpec"
+     "anyOf": [
+      {
+       "$ref": "#/$defs/GlazedRoofSpec"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
     },
     "conical": {
      "$ref": "#/$defs/ConicalRoofSpec"
@@ -804,18 +1018,95 @@
      "$ref": "#/$defs/RingSpec"
     },
     "skylight": {
-     "$ref": "#/$defs/TypeRef"
+     "anyOf": [
+      {
+       "$ref": "#/$defs/TypeRef"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
     }
    },
    "required": [
-    "glazed",
     "conical",
     "sill",
     "rafters",
-    "ring",
-    "skylight"
+    "ring"
    ],
    "title": "RoofSpec",
+   "type": "object"
+  },
+  "RoundMass": {
+   "additionalProperties": false,
+   "description": "A solid cylinder of masonry: a flue or a round core.",
+   "properties": {
+    "id": {
+     "pattern": "^[a-z][a-z0-9_]*$",
+     "title": "Id",
+     "type": "string"
+    },
+    "pattern": {
+     "const": "round_mass",
+     "title": "Pattern",
+     "type": "string"
+    },
+    "name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Name"
+    },
+    "center": {
+     "title": "Center",
+     "type": "string"
+    },
+    "floor": {
+     "title": "Floor",
+     "type": "string"
+    },
+    "type": {
+     "title": "Type",
+     "type": "string"
+    },
+    "radius": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      }
+     ],
+     "title": "Radius"
+    },
+    "top": {
+     "title": "Top",
+     "type": "string"
+    },
+    "src": {
+     "$ref": "#/$defs/Source"
+    }
+   },
+   "required": [
+    "id",
+    "pattern",
+    "center",
+    "floor",
+    "type",
+    "radius",
+    "top",
+    "src"
+   ],
+   "title": "RoundMass",
    "type": "object"
   },
   "RuleCheck": {
@@ -910,6 +1201,19 @@
      ],
      "default": null,
      "title": "Scale"
+    },
+    "calibration": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "pixel positions of named points, for fitting the sheet to the plan",
+     "title": "Calibration"
     },
     "note": {
      "anyOf": [
@@ -1081,8 +1385,9 @@
    "title": "Source",
    "type": "object"
   },
-  "StoneWallSpec": {
+  "StoneArcSpec": {
    "additionalProperties": false,
+   "description": "A masonry arc about the pavilion's center point. Angles are plan\nangles, counter-clockwise from +X; the arc runs from ``start`` to ``end``.",
    "properties": {
     "type": {
      "title": "Type",
@@ -1111,29 +1416,149 @@
      ],
      "title": "Radius Outside"
     },
+    "start": {
+     "title": "Start",
+     "type": "number"
+    },
+    "end": {
+     "title": "End",
+     "type": "number"
+    },
     "top": {
      "description": "level id of the top of masonry",
      "title": "Top",
      "type": "string"
     },
     "returns": {
-     "default": true,
+     "default": false,
+     "description": "add straight returns from the arc ends to the nearest columns",
      "title": "Returns",
      "type": "boolean"
     },
-    "segments": {
-     "default": 48,
-     "minimum": 8,
-     "title": "Segments",
+    "segments_per_90": {
+     "default": 24,
+     "minimum": 4,
+     "title": "Segments Per 90",
      "type": "integer"
     }
    },
    "required": [
     "type",
     "radius_outside",
+    "start",
+    "end",
     "top"
    ],
-   "title": "StoneWallSpec",
+   "title": "StoneArcSpec",
+   "type": "object"
+  },
+  "StoneRing": {
+   "additionalProperties": false,
+   "description": "A free-standing masonry arc or ring: a stair tower, a hearth, a curved\nroom wall that belongs to no hexagon.",
+   "properties": {
+    "id": {
+     "pattern": "^[a-z][a-z0-9_]*$",
+     "title": "Id",
+     "type": "string"
+    },
+    "pattern": {
+     "const": "stone_ring",
+     "title": "Pattern",
+     "type": "string"
+    },
+    "name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Name"
+    },
+    "center": {
+     "title": "Center",
+     "type": "string"
+    },
+    "floor": {
+     "title": "Floor",
+     "type": "string"
+    },
+    "type": {
+     "title": "Type",
+     "type": "string"
+    },
+    "radius_outside": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      }
+     ],
+     "title": "Radius Outside"
+    },
+    "start": {
+     "default": 0.0,
+     "title": "Start",
+     "type": "number"
+    },
+    "end": {
+     "default": 360.0,
+     "title": "End",
+     "type": "number"
+    },
+    "top": {
+     "title": "Top",
+     "type": "string"
+    },
+    "footprint": {
+     "default": "sector",
+     "description": "what this element adds to its floor slab",
+     "enum": [
+      "none",
+      "sector",
+      "circle"
+     ],
+     "title": "Footprint",
+     "type": "string"
+    },
+    "slab": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/TypeRef"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "segments_per_90": {
+     "default": 24,
+     "minimum": 4,
+     "title": "Segments Per 90",
+     "type": "integer"
+    },
+    "src": {
+     "$ref": "#/$defs/Source"
+    }
+   },
+   "required": [
+    "id",
+    "pattern",
+    "center",
+    "floor",
+    "type",
+    "radius_outside",
+    "top",
+    "src"
+   ],
+   "title": "StoneRing",
    "type": "object"
   },
   "TypeRef": {
@@ -1245,18 +1670,36 @@
    "items": {
     "discriminator": {
      "mapping": {
-      "radial_pavilion": "#/$defs/RadialPavilion"
+      "link": "#/$defs/Link",
+      "radial_pavilion": "#/$defs/RadialPavilion",
+      "round_mass": "#/$defs/RoundMass",
+      "stone_ring": "#/$defs/StoneRing"
      },
      "propertyName": "pattern"
     },
     "oneOf": [
      {
       "$ref": "#/$defs/RadialPavilion"
+     },
+     {
+      "$ref": "#/$defs/StoneRing"
+     },
+     {
+      "$ref": "#/$defs/RoundMass"
+     },
+     {
+      "$ref": "#/$defs/Link"
      }
     ]
    },
    "title": "Elements",
    "type": "array"
+  },
+  "floors": {
+   "$ref": "#/$defs/Floors",
+   "default": {
+    "gap_fill": "0\""
+   }
   },
   "checks": {
    "$ref": "#/$defs/Checks",
