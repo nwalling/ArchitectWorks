@@ -16,11 +16,12 @@ import numpy as np
 from architectworks.reader.detect import Detections
 
 MAX_SIDE = 1568  # keeps one view at about 1,600 image tokens or fewer
+JPEG_QUALITY = 90  # a 1568 px view is ~250-450 KB; PNG would be 1-2 MB
 
 
 @dataclass
 class View:
-    png: bytes
+    image: bytes  # JPEG
     x0: int
     y0: int
     x1: int
@@ -71,7 +72,7 @@ def render(flat: np.ndarray, x0: float, y0: float, x1: float, y1: float, det: De
             cv2.circle(img, (X, Y), max(4, int(3 * scale)), color, 1, cv2.LINE_AA)
             cv2.putText(img, m.id, (X + 5, Y - 5), cv2.FONT_HERSHEY_SIMPLEX, font, color, 1, cv2.LINE_AA)
             marks.append(m.to_json())
-    ok, buf = cv2.imencode(".png", img)
+    ok, buf = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
     if not ok:
         raise RuntimeError("could not encode view")
     return View(buf.tobytes(), x0, y0, x1, y1, scale, marks)

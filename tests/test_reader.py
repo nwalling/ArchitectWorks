@@ -83,7 +83,8 @@ def test_hand_reading_marks_exist(det, hand):
 
 def test_view_reports_its_region_and_marks(flat, det):
     v = render(flat, 400, 300, 700, 600, det)
-    assert v.png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert v.image[:3] == b"\xff\xd8\xff"  # JPEG, to keep long conversations under the request size limit
+    assert len(v.image) < 600_000
     assert (v.x0, v.y0, v.x1, v.y1) == (400, 300, 700, 600)
     assert v.scale == pytest.approx(4.0)
     assert v.marks and all(400 <= m["x"] <= 700 and 300 <= m["y"] <= 600 for m in v.marks)
@@ -278,6 +279,14 @@ def test_reader_tool_loop_and_recordings(tmp_path, flat, det, hand):
     assert again.reading == hand and (again.called, again.replayed) == (0, 3)
     with pytest.raises(claude.NoRecording):
         claude.read_plan(flat, det, recordings=tmp_path / "empty", offline=True, log=lambda _: None)
+
+
+def test_reader_stops_viewing_before_the_request_limits(monkeypatch, flat, det, hand):
+    replies = scripted(hand)
+    monkeypatch.setattr(claude, "MAX_IMAGES", 2)  # the overview plus the one view turn 1 gets
+    client = FakeClient([replies[0], replies[2]])
+    result = claude.read_plan(flat, det, client=client, log=lambda _: None)
+    assert result.turns == 2 and client.requests[1]["tool_choice"] == {"type": "none"}
 
 
 def test_reader_last_turn_and_failures(tmp_path, flat, det, hand):

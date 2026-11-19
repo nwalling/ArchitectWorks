@@ -34,6 +34,10 @@ BETAS = ["server-side-fallback-2026-07-01"]
 MAX_TOKENS = 64000
 MAX_TURNS = 40
 MAX_MARKS_PER_CALL = 8
+# The API takes at most 32 MB and 100 images per request, and every view
+# stays in the conversation. Past either budget the next turn is the last.
+MAX_IMAGE_BYTES = 20_000_000
+MAX_IMAGES = 80
 
 SYSTEM = """\
 You are reading one photographed sheet of a hand-drafted architectural drawing set so that the building can be modelled from it.
@@ -118,7 +122,19 @@ class NoRecording(ReaderError):
 
 
 def _image_block(view: View) -> dict:
-    return {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": base64.standard_b64encode(view.png).decode("ascii")}}
+    return {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.standard_b64encode(view.image).decode("ascii")}}
+
+
+def _images(blocks: list[dict]) -> tuple[int, int]:
+    """(count, base64 bytes) of the images in a list of content blocks."""
+    n = size = 0
+    for b in blocks:
+        if b.get("type") == "image":
+            n, size = n + 1, size + len(b["source"]["data"])
+        elif isinstance(b.get("content"), list):
+            dn, ds = _images(b["content"])
+            n, size = n + dn, size + ds
+    return n, size
 
 
 def marks_listing(det: Detections) -> str:
@@ -216,6 +232,8 @@ def read_plan(
     usage: dict[str, int] = {}
     served: list[str] = []
     views = 0
+    n_images, image_bytes = _images(messages[0]["content"])
+    force_last = False
 
     def run_tool(name: str, raw: Any) -> list[dict]:
         nonlocal views
@@ -244,7 +262,7 @@ def read_plan(
         raise ValueError(f"no tool named {name}")
 
     for turn in range(1, max_turns + 1):
-        last = turn == max_turns
+        last = turn == max_turns or force_last
         params: dict[str, Any] = {
             "model": MODEL,
             "max_tokens": MAX_TOKENS,
@@ -295,7 +313,10 @@ def read_plan(
                     results.append({"type": "tool_result", "tool_use_id": block["id"], "content": body})
                 except (ValidationError, ValueError) as err:
                     results.append({"type": "tool_result", "tool_use_id": block["id"], "content": f"error: {err}", "is_error": True})
-            if turn + 1 == max_turns:
+            dn, ds = _images(results)
+            n_images, image_bytes = n_images + dn, image_bytes + ds
+            force_last = n_images >= MAX_IMAGES or image_bytes >= MAX_IMAGE_BYTES
+            if turn + 1 == max_turns or force_last:
                 results.append({"type": "text", "text": "That is the last view. Give your reading now."})
             messages.append({"role": "user", "content": results})
             log(f"  turn {turn}: {sum(1 for b in content if b.get('type') == 'tool_use')} tool calls, {views} views so far")

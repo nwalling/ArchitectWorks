@@ -134,10 +134,10 @@ def cmd_detect(sheet: Path, out: Path | None) -> None:
     out.mkdir(parents=True, exist_ok=True)
     (out / f"{sheet.stem}.marks.json").write_text(json.dumps(det.to_json(), indent=1) + "\n", encoding="utf-8")
     h, w = flat.shape
-    (out / f"{sheet.stem}.marks.png").write_bytes(render(flat, 0, 0, w, h, det, max_side=3000, max_zoom=1.0).png)
+    (out / f"{sheet.stem}.marks.jpg").write_bytes(render(flat, 0, 0, w, h, det, max_side=3000, max_zoom=1.0).image)
     kinds = Counter(m.kind for m in det.marks)
     print(f"{sheet}: {kinds['blob']} blobs (M), {kinds['convergence']} convergences (C), {len(det.segments)} segments")
-    print(f"  {out / (sheet.stem + '.marks.json')}, {out / (sheet.stem + '.marks.png')}")
+    print(f"  {out / (sheet.stem + '.marks.json')}, {out / (sheet.stem + '.marks.jpg')}")
 
 
 def cmd_read(sheet: Path, out: Path | None, offline: bool, max_turns: int) -> None:
