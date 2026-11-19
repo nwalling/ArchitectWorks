@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "architectworks"
+version = "0.1.0"
+description = "Turn an architect's blueprint set into a Blender model that exports cleanly to Unreal Engine."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["pydantic>=2.7", "pyyaml>=6"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+# Blender as a Python module. The wheel exists only for Python 3.13 on
+# Linux x86-64, Windows and Apple silicon; elsewhere point BLENDER at a
+# Blender 5.2 LTS install instead.
+blender = ["bpy==5.2.4; python_version == '3.13'"]
+
+[project.scripts]
+aw = "architectworks.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["blender: needs Blender (the bpy module or a blender binary)"]

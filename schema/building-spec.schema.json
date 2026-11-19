@@ -1,0 +1,1290 @@
+{
+ "$defs": {
+  "Building": {
+   "additionalProperties": false,
+   "properties": {
+    "id": {
+     "title": "Id",
+     "type": "string"
+    },
+    "code": {
+     "description": "Short code used in asset names",
+     "pattern": "^[A-Z][A-Za-z0-9]{0,11}$",
+     "title": "Code",
+     "type": "string"
+    },
+    "name": {
+     "title": "Name",
+     "type": "string"
+    }
+   },
+   "required": [
+    "id",
+    "code",
+    "name"
+   ],
+   "title": "Building",
+   "type": "object"
+  },
+  "Chain": {
+   "additionalProperties": false,
+   "description": "A dimension string: its parts must sum to its overall.",
+   "properties": {
+    "sheet": {
+     "title": "Sheet",
+     "type": "string"
+    },
+    "where": {
+     "title": "Where",
+     "type": "string"
+    },
+    "parts": {
+     "items": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "format": "fraction",
+        "type": "string"
+       }
+      ]
+     },
+     "minItems": 2,
+     "title": "Parts",
+     "type": "array"
+    },
+    "overall": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      }
+     ],
+     "title": "Overall"
+    },
+    "tolerance": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      }
+     ],
+     "default": "1/16",
+     "title": "Tolerance"
+    }
+   },
+   "required": [
+    "sheet",
+    "where",
+    "parts",
+    "overall"
+   ],
+   "title": "Chain",
+   "type": "object"
+  },
+  "Checks": {
+   "additionalProperties": false,
+   "properties": {
+    "chains": {
+     "default": [],
+     "items": {
+      "$ref": "#/$defs/Chain"
+     },
+     "title": "Chains",
+     "type": "array"
+    },
+    "rules": {
+     "default": [],
+     "items": {
+      "$ref": "#/$defs/RuleCheck"
+     },
+     "title": "Rules",
+     "type": "array"
+    }
+   },
+   "title": "Checks",
+   "type": "object"
+  },
+  "ComponentType": {
+   "additionalProperties": false,
+   "properties": {
+    "kind": {
+     "enum": [
+      "column",
+      "beam",
+      "panel",
+      "slab",
+      "wall",
+      "roof",
+      "ring",
+      "dome",
+      "plate"
+     ],
+     "title": "Kind",
+     "type": "string"
+    },
+    "material": {
+     "title": "Material",
+     "type": "string"
+    },
+    "profile": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Profile"
+    },
+    "height": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Height"
+    },
+    "section": {
+     "anyOf": [
+      {
+       "maxItems": 2,
+       "minItems": 2,
+       "prefixItems": [
+        {
+         "anyOf": [
+          {
+           "type": "number"
+          },
+          {
+           "format": "fraction",
+           "type": "string"
+          }
+         ]
+        },
+        {
+         "anyOf": [
+          {
+           "type": "number"
+          },
+          {
+           "format": "fraction",
+           "type": "string"
+          }
+         ]
+        }
+       ],
+       "type": "array"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "width, depth",
+     "title": "Section"
+    },
+    "thickness": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Thickness"
+    },
+    "rise": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Rise"
+    },
+    "collision": {
+     "default": true,
+     "title": "Collision",
+     "type": "boolean"
+    },
+    "src": {
+     "$ref": "#/$defs/Source"
+    }
+   },
+   "required": [
+    "kind",
+    "material",
+    "src"
+   ],
+   "title": "ComponentType",
+   "type": "object"
+  },
+  "ConicalRoofSpec": {
+   "additionalProperties": false,
+   "properties": {
+    "type": {
+     "title": "Type",
+     "type": "string"
+    },
+    "eave_overhang": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      }
+     ],
+     "title": "Eave Overhang"
+    },
+    "segments": {
+     "default": 24,
+     "minimum": 4,
+     "title": "Segments",
+     "type": "integer"
+    },
+    "nominal_pitch": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "pitch stated in a general note, for cross-checking",
+     "title": "Nominal Pitch"
+    },
+    "src": {
+     "$ref": "#/$defs/Source"
+    }
+   },
+   "required": [
+    "type",
+    "eave_overhang",
+    "src"
+   ],
+   "title": "ConicalRoofSpec",
+   "type": "object"
+  },
+  "ControlPoint": {
+   "additionalProperties": false,
+   "properties": {
+    "at": {
+     "maxItems": 2,
+     "minItems": 2,
+     "prefixItems": [
+      {
+       "anyOf": [
+        {
+         "type": "number"
+        },
+        {
+         "format": "fraction",
+         "type": "string"
+        }
+       ]
+      },
+      {
+       "anyOf": [
+        {
+         "type": "number"
+        },
+        {
+         "format": "fraction",
+         "type": "string"
+        }
+       ]
+      }
+     ],
+     "title": "At",
+     "type": "array"
+    },
+    "src": {
+     "$ref": "#/$defs/Source"
+    }
+   },
+   "required": [
+    "at",
+    "src"
+   ],
+   "title": "ControlPoint",
+   "type": "object"
+  },
+  "GlazedRoofSpec": {
+   "additionalProperties": false,
+   "properties": {
+    "panel": {
+     "title": "Panel",
+     "type": "string"
+    },
+    "pitch": {
+     "title": "Pitch",
+     "type": "number"
+    },
+    "src": {
+     "$ref": "#/$defs/Source"
+    }
+   },
+   "required": [
+    "panel",
+    "pitch",
+    "src"
+   ],
+   "title": "GlazedRoofSpec",
+   "type": "object"
+  },
+  "HeaderSpec": {
+   "additionalProperties": false,
+   "properties": {
+    "type": {
+     "title": "Type",
+     "type": "string"
+    },
+    "src": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Source"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "top": {
+     "description": "level id of the top of header",
+     "title": "Top",
+     "type": "string"
+    }
+   },
+   "required": [
+    "type",
+    "top"
+   ],
+   "title": "HeaderSpec",
+   "type": "object"
+  },
+  "Level": {
+   "additionalProperties": false,
+   "properties": {
+    "elev": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      }
+     ],
+     "title": "Elev"
+    },
+    "src": {
+     "$ref": "#/$defs/Source"
+    }
+   },
+   "required": [
+    "elev",
+    "src"
+   ],
+   "title": "Level",
+   "type": "object"
+  },
+  "Material": {
+   "additionalProperties": false,
+   "properties": {
+    "unreal": {
+     "pattern": "^M_[A-Za-z0-9_]+$",
+     "title": "Unreal",
+     "type": "string"
+    },
+    "color": {
+     "pattern": "^#[0-9a-fA-F]{6}$",
+     "title": "Color",
+     "type": "string"
+    },
+    "translucent": {
+     "default": false,
+     "title": "Translucent",
+     "type": "boolean"
+    },
+    "opacity": {
+     "default": 1.0,
+     "title": "Opacity",
+     "type": "number"
+    }
+   },
+   "required": [
+    "unreal",
+    "color"
+   ],
+   "title": "Material",
+   "type": "object"
+  },
+  "OpenItem": {
+   "additionalProperties": false,
+   "properties": {
+    "kind": {
+     "enum": [
+      "unresolved_reference",
+      "missing_sheet",
+      "assumption",
+      "conflict",
+      "simplification"
+     ],
+     "title": "Kind",
+     "type": "string"
+    },
+    "ref": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Ref"
+    },
+    "cited_by": {
+     "default": [],
+     "items": {
+      "type": "string"
+     },
+     "title": "Cited By",
+     "type": "array"
+    },
+    "what": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "What"
+    },
+    "effect": {
+     "title": "Effect",
+     "type": "string"
+    }
+   },
+   "required": [
+    "kind",
+    "effect"
+   ],
+   "title": "OpenItem",
+   "type": "object"
+  },
+  "PlanPolygon": {
+   "additionalProperties": false,
+   "properties": {
+    "sides": {
+     "maximum": 12,
+     "minimum": 3,
+     "title": "Sides",
+     "type": "integer"
+    },
+    "side": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      }
+     ],
+     "title": "Side"
+    },
+    "rotation": {
+     "title": "Rotation",
+     "type": "number"
+    },
+    "src": {
+     "$ref": "#/$defs/Source"
+    }
+   },
+   "required": [
+    "sides",
+    "side",
+    "rotation",
+    "src"
+   ],
+   "title": "PlanPolygon",
+   "type": "object"
+  },
+  "Profile": {
+   "additionalProperties": false,
+   "description": "A closed 2D outline in the component's local plan frame (inches).",
+   "properties": {
+    "points": {
+     "items": {
+      "maxItems": 2,
+      "minItems": 2,
+      "prefixItems": [
+       {
+        "anyOf": [
+         {
+          "type": "number"
+         },
+         {
+          "format": "fraction",
+          "type": "string"
+         }
+        ]
+       },
+       {
+        "anyOf": [
+         {
+          "type": "number"
+         },
+         {
+          "format": "fraction",
+          "type": "string"
+         }
+        ]
+       }
+      ],
+      "type": "array"
+     },
+     "minItems": 3,
+     "title": "Points",
+     "type": "array"
+    },
+    "axis_note": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Axis Note"
+    },
+    "src": {
+     "$ref": "#/$defs/Source"
+    }
+   },
+   "required": [
+    "points",
+    "src"
+   ],
+   "title": "Profile",
+   "type": "object"
+  },
+  "RadialPavilion": {
+   "additionalProperties": false,
+   "properties": {
+    "id": {
+     "pattern": "^[a-z][a-z0-9_]*$",
+     "title": "Id",
+     "type": "string"
+    },
+    "pattern": {
+     "const": "radial_pavilion",
+     "title": "Pattern",
+     "type": "string"
+    },
+    "name": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Name"
+    },
+    "center": {
+     "title": "Center",
+     "type": "string"
+    },
+    "floor": {
+     "title": "Floor",
+     "type": "string"
+    },
+    "plan": {
+     "$ref": "#/$defs/PlanPolygon"
+    },
+    "glazed_sides": {
+     "items": {
+      "type": "integer"
+     },
+     "title": "Glazed Sides",
+     "type": "array"
+    },
+    "columns": {
+     "$ref": "#/$defs/TypeRef"
+    },
+    "header": {
+     "$ref": "#/$defs/HeaderSpec"
+    },
+    "doors": {
+     "$ref": "#/$defs/TypeRef"
+    },
+    "stone_wall": {
+     "$ref": "#/$defs/StoneWallSpec"
+    },
+    "slab": {
+     "$ref": "#/$defs/SlabSpec"
+    },
+    "roof": {
+     "$ref": "#/$defs/RoofSpec"
+    }
+   },
+   "required": [
+    "id",
+    "pattern",
+    "center",
+    "floor",
+    "plan",
+    "glazed_sides",
+    "columns",
+    "header",
+    "doors",
+    "stone_wall",
+    "slab",
+    "roof"
+   ],
+   "title": "RadialPavilion",
+   "type": "object"
+  },
+  "RafterSpec": {
+   "additionalProperties": false,
+   "properties": {
+    "type": {
+     "title": "Type",
+     "type": "string"
+    },
+    "src": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Source"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "cone_spacing": {
+     "title": "Cone Spacing",
+     "type": "number"
+    },
+    "glazed_midspan": {
+     "default": true,
+     "title": "Glazed Midspan",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "type",
+    "cone_spacing"
+   ],
+   "title": "RafterSpec",
+   "type": "object"
+  },
+  "RingSpec": {
+   "additionalProperties": false,
+   "properties": {
+    "type": {
+     "title": "Type",
+     "type": "string"
+    },
+    "src": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Source"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "top": {
+     "description": "level id of the top of the compression ring",
+     "title": "Top",
+     "type": "string"
+    },
+    "measured_radius": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "radius scaled off a sheet, for cross-checking",
+     "title": "Measured Radius"
+    },
+    "measured_src": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Source"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    }
+   },
+   "required": [
+    "type",
+    "top"
+   ],
+   "title": "RingSpec",
+   "type": "object"
+  },
+  "RoofSpec": {
+   "additionalProperties": false,
+   "properties": {
+    "glazed": {
+     "$ref": "#/$defs/GlazedRoofSpec"
+    },
+    "conical": {
+     "$ref": "#/$defs/ConicalRoofSpec"
+    },
+    "sill": {
+     "$ref": "#/$defs/SillSpec"
+    },
+    "rafters": {
+     "$ref": "#/$defs/RafterSpec"
+    },
+    "ring": {
+     "$ref": "#/$defs/RingSpec"
+    },
+    "skylight": {
+     "$ref": "#/$defs/TypeRef"
+    }
+   },
+   "required": [
+    "glazed",
+    "conical",
+    "sill",
+    "rafters",
+    "ring",
+    "skylight"
+   ],
+   "title": "RoofSpec",
+   "type": "object"
+  },
+  "RuleCheck": {
+   "additionalProperties": false,
+   "properties": {
+    "rule": {
+     "enum": [
+      "hexagon_apothem",
+      "hexagon_half_side"
+     ],
+     "title": "Rule",
+     "type": "string"
+    },
+    "side": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      }
+     ],
+     "title": "Side"
+    },
+    "dimensioned": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      }
+     ],
+     "title": "Dimensioned"
+    },
+    "sheet": {
+     "title": "Sheet",
+     "type": "string"
+    },
+    "tolerance": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      }
+     ],
+     "default": "1/4",
+     "title": "Tolerance"
+    }
+   },
+   "required": [
+    "rule",
+    "side",
+    "dimensioned",
+    "sheet"
+   ],
+   "title": "RuleCheck",
+   "type": "object"
+  },
+  "Sheet": {
+   "additionalProperties": false,
+   "properties": {
+    "title": {
+     "title": "Title",
+     "type": "string"
+    },
+    "file": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "File"
+    },
+    "scale": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Scale"
+    },
+    "note": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Note"
+    }
+   },
+   "required": [
+    "title"
+   ],
+   "title": "Sheet",
+   "type": "object"
+  },
+  "SillSpec": {
+   "additionalProperties": false,
+   "properties": {
+    "type": {
+     "title": "Type",
+     "type": "string"
+    },
+    "src": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Source"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    }
+   },
+   "required": [
+    "type"
+   ],
+   "title": "SillSpec",
+   "type": "object"
+  },
+  "SlabSpec": {
+   "additionalProperties": false,
+   "properties": {
+    "type": {
+     "title": "Type",
+     "type": "string"
+    },
+    "src": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Source"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "edge_offset": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      }
+     ],
+     "description": "slab edge beyond the glazing line",
+     "title": "Edge Offset"
+    }
+   },
+   "required": [
+    "type",
+    "edge_offset"
+   ],
+   "title": "SlabSpec",
+   "type": "object"
+  },
+  "Source": {
+   "additionalProperties": false,
+   "description": "Where a value came from. ``basis`` orders authority:\ndimensioned > rule > measured > assumed.",
+   "properties": {
+    "sheet": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Sheet"
+    },
+    "view": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "View"
+    },
+    "basis": {
+     "enum": [
+      "dimensioned",
+      "rule",
+      "measured",
+      "assumed"
+     ],
+     "title": "Basis",
+     "type": "string"
+    },
+    "confidence": {
+     "anyOf": [
+      {
+       "enum": [
+        "high",
+        "medium",
+        "low"
+       ],
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Confidence"
+    },
+    "quote": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "description": "Text as lettered on the sheet",
+     "title": "Quote"
+    },
+    "note": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Note"
+    }
+   },
+   "required": [
+    "basis"
+   ],
+   "title": "Source",
+   "type": "object"
+  },
+  "StoneWallSpec": {
+   "additionalProperties": false,
+   "properties": {
+    "type": {
+     "title": "Type",
+     "type": "string"
+    },
+    "src": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Source"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "radius_outside": {
+     "anyOf": [
+      {
+       "type": "number"
+      },
+      {
+       "format": "fraction",
+       "type": "string"
+      }
+     ],
+     "title": "Radius Outside"
+    },
+    "top": {
+     "description": "level id of the top of masonry",
+     "title": "Top",
+     "type": "string"
+    },
+    "returns": {
+     "default": true,
+     "title": "Returns",
+     "type": "boolean"
+    },
+    "segments": {
+     "default": 48,
+     "minimum": 8,
+     "title": "Segments",
+     "type": "integer"
+    }
+   },
+   "required": [
+    "type",
+    "radius_outside",
+    "top"
+   ],
+   "title": "StoneWallSpec",
+   "type": "object"
+  },
+  "TypeRef": {
+   "additionalProperties": false,
+   "properties": {
+    "type": {
+     "title": "Type",
+     "type": "string"
+    },
+    "src": {
+     "anyOf": [
+      {
+       "$ref": "#/$defs/Source"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    }
+   },
+   "required": [
+    "type"
+   ],
+   "title": "TypeRef",
+   "type": "object"
+  },
+  "Types": {
+   "additionalProperties": false,
+   "properties": {
+    "materials": {
+     "additionalProperties": {
+      "$ref": "#/$defs/Material"
+     },
+     "title": "Materials",
+     "type": "object"
+    },
+    "profiles": {
+     "additionalProperties": {
+      "$ref": "#/$defs/Profile"
+     },
+     "default": {},
+     "title": "Profiles",
+     "type": "object"
+    },
+    "components": {
+     "additionalProperties": {
+      "$ref": "#/$defs/ComponentType"
+     },
+     "title": "Components",
+     "type": "object"
+    }
+   },
+   "required": [
+    "materials",
+    "components"
+   ],
+   "title": "Types",
+   "type": "object"
+  }
+ },
+ "additionalProperties": false,
+ "properties": {
+  "spec_version": {
+   "title": "Spec Version",
+   "type": "string"
+  },
+  "building": {
+   "$ref": "#/$defs/Building"
+  },
+  "units": {
+   "enum": [
+    "imperial",
+    "metric"
+   ],
+   "title": "Units",
+   "type": "string"
+  },
+  "datum": {
+   "description": "level id that becomes z = 0 in Blender and Unreal",
+   "title": "Datum",
+   "type": "string"
+  },
+  "sheets": {
+   "additionalProperties": {
+    "$ref": "#/$defs/Sheet"
+   },
+   "title": "Sheets",
+   "type": "object"
+  },
+  "levels": {
+   "additionalProperties": {
+    "$ref": "#/$defs/Level"
+   },
+   "title": "Levels",
+   "type": "object"
+  },
+  "control": {
+   "additionalProperties": {
+    "$ref": "#/$defs/ControlPoint"
+   },
+   "title": "Control",
+   "type": "object"
+  },
+  "types": {
+   "$ref": "#/$defs/Types"
+  },
+  "elements": {
+   "items": {
+    "discriminator": {
+     "mapping": {
+      "radial_pavilion": "#/$defs/RadialPavilion"
+     },
+     "propertyName": "pattern"
+    },
+    "oneOf": [
+     {
+      "$ref": "#/$defs/RadialPavilion"
+     }
+    ]
+   },
+   "title": "Elements",
+   "type": "array"
+  },
+  "checks": {
+   "$ref": "#/$defs/Checks",
+   "default": {
+    "chains": [],
+    "rules": []
+   }
+  },
+  "open_items": {
+   "default": [],
+   "items": {
+    "$ref": "#/$defs/OpenItem"
+   },
+   "title": "Open Items",
+   "type": "array"
+  }
+ },
+ "required": [
+  "spec_version",
+  "building",
+  "units",
+  "datum",
+  "sheets",
+  "levels",
+  "control",
+  "types",
+  "elements"
+ ],
+ "title": "BuildingSpec",
+ "type": "object"
+}

@@ -1,0 +1,213 @@
+# ArchitectWorks Building Spec: phase 0, one pavilion of the example house.
+#
+# Hand-written from the five sheet photos in ./sheets. Lengths are copied as
+# lettered on the drawings and parsed to exact fractions of an inch. Every
+# value carries `src`: the sheet, the basis (dimensioned > rule > measured >
+# assumed) and, where it helps a reviewer, the words on the sheet.
+
+spec_version: "0.1"
+
+building:
+  id: example-house
+  code: EH
+  name: Example house (hand-drafted set, five sheets)
+
+units: imperial
+datum: ff_bedroom          # F.F. 100'-0" becomes z = 0 in Blender and Unreal
+
+sheets:
+  foundation: {title: Foundation plan, file: sheets/foundation-plan.jpg, scale: 1/4" = 1'-0", note: scale too small to read in the photo; inferred}
+  roof: {title: Roof framing plan, file: sheets/roof-framing-plan.jpg, scale: 1/4" = 1'-0", note: carries the general notes}
+  elevations: {title: Exterior elevations (southwest and northwest), file: sheets/exterior-elevations.jpg, scale: 1/4" = 1'-0"}
+  D-1: {title: "Section D-1, typical sliding door at concrete column", file: sheets/section-d1.jpg, scale: 1" = 1'-0" and 3" = 1'-0"}
+  D-3: {title: "Section D-3, typical wall at bedroom and study", file: sheets/section-d3.jpg, scale: 1" = 1'-0"}
+
+levels:
+  ff_bedroom:
+    elev: 100'-0"
+    src: {sheet: elevations, basis: dimensioned, quote: "F.F. @ BDRM/STUDY ELEV 100'-0\""}
+  ff_music:
+    elev: 98'-4"
+    src: {sheet: D-3, basis: dimensioned, quote: "F.F. ELEV 98'-4\"", note: not used in phase 0}
+  t_o_header:
+    elev: 107'-1 1/2"
+    src: {sheet: elevations, basis: dimensioned, confidence: medium, quote: "TOP OF HEADER ELEV 107'-1 1/2\"", note: lettered beside the living room pavilion}
+  t_o_masonry_bedroom:
+    elev: 105'-8"
+    src: {sheet: D-3, basis: dimensioned, confidence: medium, quote: "5'-8\" above F.F. ELEV 100'-0\"", note: "the matching label on the SW elevation reads 105'-? in the photo"}
+  t_o_ring_bedroom:
+    elev: 110'-9"
+    src: {sheet: elevations, basis: dimensioned, quote: "T.O. COMP. RING @ BDRM/RM ELEV 110'-9\"", note: on both elevations}
+  t_o_ring_living:
+    elev: 111'-10 3/4"
+    src: {sheet: elevations, basis: dimensioned, confidence: medium, quote: "T.O. COMP. RING @ L.R. ELEV 111'-10 3/4\"", note: not used in phase 0}
+
+control:
+  cp_a:
+    at: [0", 0"]
+    src: {basis: assumed, note: "plan coordinates of the center points are not read yet; phase 0 stands pavilion A at the origin"}
+
+types:
+  materials:
+    concrete: {unreal: M_Concrete, color: "#9a968c"}
+    stone_native: {unreal: M_StoneNative, color: "#8a7560"}
+    redwood: {unreal: M_Redwood, color: "#8b4a32"}
+    glass: {unreal: M_Glass, color: "#9fc3cf", translucent: true, opacity: 0.25}
+    shingle: {unreal: M_ShingleComposition, color: "#4d4a47"}
+    acrylic: {unreal: M_Acrylic, color: "#dfe9ec", translucent: true, opacity: 0.4}
+
+  profiles:
+    conc_col:
+      # +y points out of the pavilion along the radius; widest at mid-height.
+      points: [[2", 8"], [-2", 8"], [-6 3/4", 0"], [-2", -8"], [2", -8"], [6 3/4", 0"]]
+      axis_note: long axis radial, +y outward
+      src: {sheet: D-1, view: section thru conc. col., basis: dimensioned, confidence: medium,
+            quote: "4 3/4\" 2\" 2\" 4 3/4\"; 8\" 8\"; 30° TYP.", note: the notches and the door pockets are omitted}
+
+  components:
+    column_typ:
+      kind: column
+      profile: conc_col
+      height: 6'-7 1/2"
+      material: concrete
+      src: {sheet: D-1, basis: dimensioned, quote: "6'-7 1/2\" TYP. FOR ALL COLS EXCEPT COLS @ TUB - SEE DET."}
+    header_6x6:
+      kind: beam
+      section: [6", 6"]
+      material: redwood
+      src: {sheet: D-1, basis: rule, quote: "6x6 HEADER CONT. BETWEEN CONC. COLS - BEARS ON CONC. COLS",
+            note: "full 6\" deep: 100'-0\" + 6'-7 1/2\" + 6\" gives the 107'-1 1/2\" top of header on the elevation"}
+    rafter_4x6:
+      kind: beam
+      section: [4", 6"]
+      material: redwood
+      collision: false
+      src: {sheet: D-1, basis: rule, quote: "4x6 RAFTER", note: "full-size lumber, like the header"}
+    sill_2x6:
+      kind: beam
+      section: [6", 2"]
+      material: redwood
+      collision: false
+      src: {sheet: D-3, basis: rule, quote: "CONT. 2x6 SILL PL. W/ 1/2\" ANCHOR BOLTS @ 32\" O.C.", note: full-size lumber}
+    door_glass:
+      kind: panel
+      thickness: 1"
+      material: glass
+      src: {sheet: D-1, basis: measured, quote: "GL. SLIDING DOOR", note: one pane per bay; frames and the fixed/sliding split are omitted}
+    roof_glass:
+      kind: panel
+      thickness: 1"
+      material: glass
+      src: {sheet: D-1, basis: dimensioned, quote: "1\" TEMPERED INSULATING GLASS PANEL"}
+    slab_4in:
+      kind: slab
+      thickness: 4"
+      material: concrete
+      src: {sheet: D-1, basis: dimensioned, quote: "4\" CONC. SLAB W/ 6x6/10x10 WIRE MESH REINF."}
+    wall_stone:
+      kind: wall
+      thickness: 1'-4"
+      material: stone_native
+      src: {sheet: D-3, basis: assumed, note: "12\" masonry block plus stone facing; the facing is drawn but not dimensioned"}
+    roof_shingle:
+      kind: roof
+      thickness: 4 1/2"
+      material: shingle
+      src: {sheet: roof, basis: assumed, quote: "ROOFING ON 30° SLOPES TO BE COMPOSITION TAB LOCK SHINGLES; ALL ROOF INSULATION TO BE 3\" URETHANE",
+            note: "build-up assumed as 3/4\" deck + 3\" insulation + 3/4\" shingles; D-2 has the real one"}
+    ring_comp:
+      kind: ring
+      section: [4", 6"]
+      material: redwood
+      collision: false
+      src: {sheet: elevations, basis: assumed, note: size and material of the compression ring are not on these sheets}
+    skylight_dome:
+      kind: dome
+      rise: 1'-0"
+      material: acrylic
+      collision: false
+      src: {sheet: elevations, basis: measured, quote: "ACRYLIC DOME SKYLIGHT (SEE D-2) TYP.", note: rise scaled off the SW elevation}
+
+elements:
+  - id: pav_a
+    pattern: radial_pavilion
+    name: Pavilion A, a bedroom-wing pavilion standing in for all of them in phase 0
+    center: cp_a
+    floor: ff_bedroom
+    plan:
+      sides: 6
+      side: 8'-10"
+      rotation: 0deg
+      src: {sheet: foundation, basis: dimensioned, quote: "8'-10\" TYP. BET. COL. C.P.'S", note: rotation is assumed until the plan is placed}
+    glazed_sides: [0, 1, 2]
+    columns:
+      type: column_typ
+      src: {sheet: foundation, basis: dimensioned, note: columns stand on the C.P.s that bound the glazed bays}
+    header: {type: header_6x6, top: t_o_header}
+    doors:
+      type: door_glass
+      src: {sheet: elevations, basis: measured, confidence: low, quote: "TEMP. GLASS SLIDING DOOR"}
+    stone_wall:
+      type: wall_stone
+      radius_outside: 11'-8"
+      top: t_o_masonry_bedroom
+      returns: true
+      src: {sheet: foundation, basis: dimensioned, quote: "11'-8\" TYP. RAD. TO O.S. FACE OF WALL"}
+    slab:
+      type: slab_4in
+      edge_offset: 8"
+      src: {basis: assumed, note: "slab edge carried 8\" past the glazing line to take the columns"}
+    roof:
+      glazed:
+        panel: roof_glass
+        pitch: 30deg
+        src: {sheet: roof, basis: rule, quote: "ROOFING ON 30° SLOPES", note: the drawn slope on the SW elevation agrees}
+      conical:
+        type: roof_shingle
+        eave_overhang: 1'-0"
+        nominal_pitch: 30deg
+        src: {sheet: elevations, basis: measured, note: overhang scaled off the NW elevation}
+      sill: {type: sill_2x6}
+      rafters:
+        type: rafter_4x6
+        cone_spacing: 7.5deg
+        glazed_midspan: true
+        src: {sheet: roof, basis: measured, quote: "4x6 RAFTERS TYPICAL", note: spacing on the curved side approximated at 7.5 degrees}
+      ring:
+        type: ring_comp
+        top: t_o_ring_bedroom
+        measured_radius: 2'-3"
+        measured_src: {sheet: elevations, basis: measured, confidence: low, note: "dome scales 4'-0\" to 4'-10\" across on the SW elevation"}
+      skylight: {type: skylight_dome}
+
+checks:
+  chains:
+    - {sheet: foundation, where: top, parts: [5'-8", 8'-10", 4'-10", 7'-7 3/4"], overall: 26'-11 3/4"}
+    - {sheet: foundation, where: top, parts: [8'-10", 4'-10", 7'-7 3/4"], overall: 21'-3 3/4"}
+    - {sheet: foundation, where: bottom, parts: [7'-7 3/4", 5'-11"], overall: 13'-6 3/4"}
+    - {sheet: foundation, where: bottom, parts: [5'-11", 2'-4", 3'-5"], overall: 11'-8"}
+    - {sheet: foundation, where: bottom, parts: [13'-6 3/4", 11'-8"], overall: 25'-2 3/4"}
+  rules:
+    - {rule: hexagon_apothem, side: 8'-10", dimensioned: 7'-7 3/4", sheet: foundation}
+    - {rule: hexagon_apothem, side: 6'-10", dimensioned: 5'-11", sheet: foundation}
+    - {rule: hexagon_half_side, side: 8'-10", dimensioned: 4'-5", sheet: foundation}
+    - {rule: hexagon_half_side, side: 6'-10", dimensioned: 3'-5", sheet: foundation}
+
+open_items:
+  - kind: unresolved_reference
+    ref: D-2
+    cited_by: [D-3, elevations]
+    effect: roof, wall, floor, footing, skylight and stone facing build-ups use the stated defaults
+  - kind: unresolved_reference
+    ref: column detail at the tub
+    cited_by: [D-1]
+    effect: columns at the tub would be modelled as typical
+  - kind: missing_sheet
+    what: floor plan
+    effect: pavilion A stands at the origin with an assumed rotation; rooms are not assigned
+  - kind: assumption
+    what: straight stone returns between the end columns and the arc
+    effect: placed in the ASSUMED collection for review
+  - kind: simplification
+    what: column notches, door frames, trellis, gutters, footings
+    effect: not modelled in phase 0
