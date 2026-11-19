@@ -8,6 +8,51 @@ It works the way a careful person would: read the drawings into a plain-text des
 
 *The example house, generated from [`house.yaml`](projects/example-house/house.yaml) and rendered headless in Blender 5.2: six pavilions, a stair tower, the music room wall, two round cores and the glazed links between them. 65 unique meshes, 232 placements.*
 
+## Phase 2 status: reading the sheets
+
+Phase 2 teaches the pipeline to read a sheet instead of being told what is on it. The gate: a draft made from the foundation plan photo, scored against phase 1's hand-written spec as the answer key. Detection proposes, Claude names, and the dimensions written on the drawing win over anything measured in pixels.
+
+| Step | Status |
+| --- | --- |
+| Detect candidate marks (column marks, center points) | Done: 75 blobs and 327 line convergences. 21 of the 22 hand-placed calibration points are found within 4 px. The miss is the music room center, drawn as an open circle |
+| Views for the reader: crops with a sheet-pixel grid and numbered marks | Done |
+| The reader: Claude looks at the sheet, zooms with two tools, answers in a fixed JSON schema | Written, and tested against a scripted stand-in. **Not yet run against the API**: it needs `ANTHROPIC_API_KEY` |
+| Draft builder: a reading becomes control points and pavilions, every value with its basis | Done |
+| Scorer: a draft against the answer key | Done |
+| **Gate**: Claude's own reading, drafted and scored | Waiting for an API key |
+
+**The baseline.** Phase 1's hand reading ([`foundation-plan.hand.json`](projects/example-house/readings/foundation-plan.hand.json)), put through the same draft builder, scores **22 of 26 (85%)**. All 9 center points are found, 3 of them exact and 6 within 2". Four of the five pavilions are right in every respect: sides, side length, rotation and which sides are glazed. What it misses, and why:
+
+- **The top dimension chain sits 1¾" from where the key has it.** The column marks say one thing and the living room center says another. The draft goes with the columns and flags it for review; the key went with the center.
+- **The living room pavilion is missing.** The hand reading lists no columns for it, so there is nothing to build it from.
+- **The stair tower and the two round cores are 2½" to 7" off.** Nothing on the sheet dimensions them, so they are measured through the photo's perspective, and they say so.
+
+That is the bar Claude's reading has to clear, or explain why the key is wrong.
+
+### Running the reader
+
+```bash
+pip install -e ".[sheets,reader]"
+export ANTHROPIC_API_KEY=...            # or an environment variable on the cloud environment
+aw detect projects/example-house/sheets/foundation-plan.jpg
+aw read   projects/example-house/sheets/foundation-plan.jpg
+aw draft  projects/example-house/readings/foundation-plan.claude.json \
+          projects/example-house/sheets/foundation-plan.jpg \
+          --score projects/example-house/house.yaml
+```
+
+The reader runs `claude-opus-5-5` at effort `high` with adaptive thinking, structured output against [`schema.py`](src/architectworks/reader/schema.py), prompt caching, and the API's server-side refusal fallback. It may take up to 40 turns, each one a few zoomed views of about 1,600 image tokens. A run should cost a dollar or three per sheet; that is an estimate, not a measurement.
+
+Every API response is recorded under `readings/recordings/<sheet>/`, keyed by a hash of the request. Running `aw read` again with the same sheet, marks and prompt replays the recording. `aw read --offline` never calls the API at all. Commit the recordings and a reading can be reproduced by anyone, for free.
+
+| Module | Job |
+| --- | --- |
+| [`reader/detect.py`](src/architectworks/reader/detect.py) | Candidate marks: `M` blobs (center-surround filter), `C` convergences (many line directions meeting) |
+| [`reader/views.py`](src/architectworks/reader/views.py) | What the reader sees: crops with a grid labelled in sheet pixels and the marks circled |
+| [`reader/claude.py`](src/architectworks/reader/claude.py) | The reader: prompt, tools, tool loop, recordings |
+| [`reader/draft.py`](src/architectworks/reader/draft.py) | Reading to draft: chains give exact values, inked lines link them to features, a projective fit places the rest |
+| [`reader/score.py`](src/architectworks/reader/score.py) | Draft against the answer key, after aligning the two origins |
+
 ## Phase 1 status: the whole house, checked against the drawings
 
 Phase 1 models the whole house from a hand-written spec. Its gate is that the model's outlines agree with the drawings and the house can be walked in Unreal. The first half needs no Unreal, and is mostly done for the foundation plan:
@@ -62,7 +107,7 @@ Python 3.13 on Linux x86-64, Windows or Apple silicon. Those are the platforms w
 
 ```bash
 python3.13 -m venv .venv && . .venv/bin/activate
-pip install -e ".[dev,blender,sheets]"   # bpy is ~400 MB; sheets adds OpenCV
+pip install -e ".[dev,blender,sheets,reader]"   # bpy is ~400 MB; sheets adds OpenCV and SciPy
 aw build projects/example-house/house.yaml --preview
 pytest -q
 ```

@@ -1,0 +1,437 @@
+{
+ "_about": "The phase 1 hand reading of foundation-plan.jpg in the reader's output format: the answer key's own reading, for testing everything downstream of the reader. Positions and values were measured by hand in phase 1; mark ids come from the detector.",
+ "sheet": {
+  "kind": "plan",
+  "title": "Foundation plan",
+  "scale": "1/4\" = 1'-0\"",
+  "rotation_deg": 0
+ },
+ "center_points": [
+  {
+   "label": "C.P. north-west pavilion",
+   "mark": "C38",
+   "x": 499.8,
+   "y": 473.7,
+   "confidence": "high"
+  },
+  {
+   "label": "C.P. north-east pavilion",
+   "mark": "C86",
+   "x": 824.3,
+   "y": 562.6,
+   "confidence": "high"
+  },
+  {
+   "label": "C.P. center pavilion",
+   "mark": "C162",
+   "x": 620.0,
+   "y": 920.1,
+   "confidence": "high"
+  },
+  {
+   "label": "C.P. south-east pavilion",
+   "mark": "C264",
+   "x": 794.0,
+   "y": 1096.7,
+   "confidence": "high"
+  },
+  {
+   "label": "C.P. music room",
+   "mark": "",
+   "x": 574.5,
+   "y": 1144.2,
+   "confidence": "high"
+  },
+  {
+   "label": "C.P. living room",
+   "mark": "C125",
+   "x": 415.0,
+   "y": 800.0,
+   "confidence": "high"
+  },
+  {
+   "label": "stair tower",
+   "mark": "",
+   "x": 312.0,
+   "y": 520.0,
+   "confidence": "medium"
+  },
+  {
+   "label": "north round core",
+   "mark": "",
+   "x": 635.0,
+   "y": 620.0,
+   "confidence": "medium"
+  },
+  {
+   "label": "south round core",
+   "mark": "",
+   "x": 667.5,
+   "y": 1047.5,
+   "confidence": "medium"
+  }
+ ],
+ "columns": [
+  {
+   "mark": "C49",
+   "x": 634.1,
+   "y": 474.2,
+   "center": "C.P. north-west pavilion",
+   "confidence": "high"
+  },
+  {
+   "mark": "M10",
+   "x": 566.5,
+   "y": 354.2,
+   "center": "C.P. north-west pavilion",
+   "confidence": "high"
+  },
+  {
+   "mark": "C8",
+   "x": 429.6,
+   "y": 350.5,
+   "center": "C.P. north-west pavilion",
+   "confidence": "high"
+  },
+  {
+   "mark": "M15",
+   "x": 364.5,
+   "y": 470.4,
+   "center": "C.P. north-west pavilion",
+   "confidence": "high"
+  },
+  {
+   "mark": "M19",
+   "x": 941.0,
+   "y": 493.3,
+   "center": "C.P. north-east pavilion",
+   "confidence": "high"
+  },
+  {
+   "mark": "C24",
+   "x": 823.9,
+   "y": 424.8,
+   "center": "C.P. north-east pavilion",
+   "confidence": "high"
+  },
+  {
+   "mark": "C61",
+   "x": 708.3,
+   "y": 492.4,
+   "center": "C.P. north-east pavilion",
+   "confidence": "high"
+  },
+  {
+   "mark": "M31",
+   "x": 941.3,
+   "y": 628.9,
+   "center": "C.P. north-east pavilion",
+   "confidence": "high"
+  },
+  {
+   "mark": "C139",
+   "x": 707.3,
+   "y": 867.5,
+   "center": "C.P. center pavilion",
+   "confidence": "high"
+  },
+  {
+   "mark": "M44",
+   "x": 620.3,
+   "y": 818.0,
+   "center": "C.P. center pavilion",
+   "confidence": "high"
+  },
+  {
+   "mark": "C130",
+   "x": 531.8,
+   "y": 868.7,
+   "center": "C.P. center pavilion",
+   "confidence": "high"
+  },
+  {
+   "mark": "M56",
+   "x": 707.6,
+   "y": 970.6,
+   "center": "C.P. center pavilion",
+   "confidence": "high"
+  },
+  {
+   "mark": "M64",
+   "x": 892.9,
+   "y": 1095.9,
+   "center": "C.P. south-east pavilion",
+   "confidence": "high"
+  },
+  {
+   "mark": "C248",
+   "x": 843.0,
+   "y": 1005.7,
+   "center": "C.P. south-east pavilion",
+   "confidence": "high"
+  },
+  {
+   "mark": "M58",
+   "x": 742.9,
+   "y": 1005.3,
+   "center": "C.P. south-east pavilion",
+   "confidence": "high"
+  },
+  {
+   "mark": "M66",
+   "x": 847.0,
+   "y": 1185.7,
+   "center": "C.P. south-east pavilion",
+   "confidence": "high"
+  }
+ ],
+ "chains": [
+  {
+   "side": "top",
+   "axis": "horizontal",
+   "ticks": [
+    {
+     "x": 319,
+     "y": 198.8
+    },
+    {
+     "x": 408,
+     "y": 201.2
+    },
+    {
+     "x": 498,
+     "y": 202.0
+    },
+    {
+     "x": 634,
+     "y": 205.0
+    },
+    {
+     "x": 708,
+     "y": 205.4
+    },
+    {
+     "x": 827,
+     "y": 205.4
+    }
+   ],
+   "parts": [
+    "5'-8\"",
+    "5'-8\"",
+    "8'-10\"",
+    "4'-10\"",
+    "7'-7 3/4\""
+   ],
+   "overall": "",
+   "confidence": "high"
+  },
+  {
+   "side": "bottom",
+   "axis": "horizontal",
+   "ticks": [
+    {
+     "x": 409.6,
+     "y": 1462.5
+    },
+    {
+     "x": 532.9,
+     "y": 1458.9
+    },
+    {
+     "x": 622.9,
+     "y": 1456.4
+    },
+    {
+     "x": 711.1,
+     "y": 1456.4
+    },
+    {
+     "x": 746.1,
+     "y": 1456.1
+    },
+    {
+     "x": 798.9,
+     "y": 1455.4
+    }
+   ],
+   "parts": [
+    "7'-7 3/4\"",
+    "5'-11\"",
+    "5'-11\"",
+    "2'-4\"",
+    "3'-5\""
+   ],
+   "overall": "25'-2 3/4\"",
+   "confidence": "high"
+  },
+  {
+   "side": "right",
+   "axis": "vertical",
+   "ticks": [
+    {
+     "x": 1101.0,
+     "y": 472.0
+    },
+    {
+     "x": 1101.0,
+     "y": 561.0
+    },
+    {
+     "x": 1101.5,
+     "y": 798.5
+    },
+    {
+     "x": 1102.0,
+     "y": 921.0
+    },
+    {
+     "x": 1102.5,
+     "y": 1097.0
+    },
+    {
+     "x": 1102.7,
+     "y": 1143.5
+    }
+   ],
+   "parts": [
+    "5'-8 1/2\"",
+    "15'-4\"",
+    "7'-10\"",
+    "11'-8\"",
+    "3'-0\""
+   ],
+   "overall": "43'-6 1/2\"",
+   "confidence": "high"
+  },
+  {
+   "side": "right",
+   "axis": "vertical",
+   "ticks": [
+    {
+     "x": 1076.5,
+     "y": 472.0
+    },
+    {
+     "x": 1076.5,
+     "y": 492.7
+    },
+    {
+     "x": 1076.5,
+     "y": 561.0
+    }
+   ],
+   "parts": [
+    "1'-3 1/2\"",
+    "4'-5\""
+   ],
+   "overall": "5'-8 1/2\"",
+   "confidence": "high"
+  },
+  {
+   "side": "right",
+   "axis": "vertical",
+   "ticks": [
+    {
+     "x": 1078.8,
+     "y": 798.5
+    },
+    {
+     "x": 1078.8,
+     "y": 868.5
+    },
+    {
+     "x": 1078.8,
+     "y": 921.0
+    },
+    {
+     "x": 1078.8,
+     "y": 970.4
+    },
+    {
+     "x": 1078.8,
+     "y": 1007.7
+    },
+    {
+     "x": 1078.8,
+     "y": 1097.0
+    }
+   ],
+   "parts": [
+    "4'-5\"",
+    "3'-5\"",
+    "3'-5\"",
+    "2'-4\"",
+    "5'-11\""
+   ],
+   "overall": "",
+   "confidence": "medium"
+  },
+  {
+   "side": "left",
+   "axis": "vertical",
+   "ticks": [
+    {
+     "x": 111.0,
+     "y": 462.0
+    },
+    {
+     "x": 111.0,
+     "y": 620.8
+    },
+    {
+     "x": 111.0,
+     "y": 802.0
+    }
+   ],
+   "parts": [
+    "10'-3 3/4\"",
+    "11'-8\""
+   ],
+   "overall": "21'-11 3/4\"",
+   "confidence": "low"
+  }
+ ],
+ "notes": [
+  {
+   "text": "8'-10\" TYP. BET. COL. C.P.'S",
+   "kind": "typical_side",
+   "x": 505,
+   "y": 275,
+   "applies_to": [
+    "C.P. north-west pavilion",
+    "C.P. north-east pavilion"
+   ]
+  },
+  {
+   "text": "6'-10\" TYP. BET. COL. C.P.'S",
+   "kind": "typical_side",
+   "x": 920,
+   "y": 1035,
+   "applies_to": [
+    "C.P. center pavilion",
+    "C.P. south-east pavilion"
+   ]
+  },
+  {
+   "text": "11'-8\" TYP. RAD. TO O.S. FACE OF BLK",
+   "kind": "radius",
+   "x": 640,
+   "y": 560,
+   "applies_to": [
+    "C.P. north-west pavilion",
+    "C.P. north-east pavilion"
+   ]
+  },
+  {
+   "text": "8'-0\" RAD. TO O.S. FACE OF BLK",
+   "kind": "radius",
+   "x": 760,
+   "y": 960,
+   "applies_to": [
+    "C.P. center pavilion",
+    "C.P. south-east pavilion"
+   ]
+  }
+ ],
+ "unreadable": []
+}

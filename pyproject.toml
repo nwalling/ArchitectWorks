@@ -12,8 +12,12 @@ dependencies = ["pydantic>=2.7", "pyyaml>=6", "shapely>=2.1"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
-# Fitting photographed sheets to the plan and checking the model against them.
-sheets = ["opencv-python-headless>=4.10", "numpy>=1.26"]
+# Fitting photographed sheets to the plan, checking the model against them,
+# and detecting marks and building drafts from readings.
+sheets = ["opencv-python-headless>=4.10", "numpy>=1.26", "scipy>=1.13"]
+# The reader: Claude reads a sheet (phase 2). Needs ANTHROPIC_API_KEY to run;
+# recorded readings replay without it.
+reader = ["anthropic>=2.11,<3"]
 # Blender as a Python module. The wheel exists only for Python 3.13 on
 # Linux x86-64, Windows and Apple silicon; elsewhere point BLENDER at a
 # Blender 5.2 LTS install instead.

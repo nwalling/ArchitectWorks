@@ -105,6 +105,109 @@ def cmd_blender(out: Path, preview: bool, samples: int) -> dict:
     return report
 
 
+# ---- phase 2: reading sheets ----
+
+def reader_paths(sheet: Path) -> dict[str, Path]:
+    """projects/<p>/sheets/<s>.jpg -> where the reader's files go."""
+    project = sheet.resolve().parent.parent
+    return {
+        "readings": project / "readings",
+        "recordings": project / "readings" / "recordings" / sheet.stem,
+        "out": project / "out" / "reader",
+    }
+
+
+def _load_sheet(sheet: Path):
+    try:
+        from architectworks.reader.detect import detect, load_flat
+    except ImportError as err:
+        raise SystemExit(f"reading sheets needs the sheets extra (pip install -e .[sheets]): {err}")
+    flat = load_flat(sheet)
+    return flat, detect(flat)
+
+
+def cmd_detect(sheet: Path, out: Path | None) -> None:
+    from architectworks.reader.views import render
+
+    flat, det = _load_sheet(sheet)
+    out = out or reader_paths(sheet)["out"]
+    out.mkdir(parents=True, exist_ok=True)
+    (out / f"{sheet.stem}.marks.json").write_text(json.dumps(det.to_json(), indent=1) + "\n", encoding="utf-8")
+    h, w = flat.shape
+    (out / f"{sheet.stem}.marks.png").write_bytes(render(flat, 0, 0, w, h, det, max_side=3000, max_zoom=1.0).png)
+    kinds = Counter(m.kind for m in det.marks)
+    print(f"{sheet}: {kinds['blob']} blobs (M), {kinds['convergence']} convergences (C), {len(det.segments)} segments")
+    print(f"  {out / (sheet.stem + '.marks.json')}, {out / (sheet.stem + '.marks.png')}")
+
+
+def cmd_read(sheet: Path, out: Path | None, offline: bool, max_turns: int) -> None:
+    from architectworks.reader import claude
+
+    flat, det = _load_sheet(sheet)
+    paths = reader_paths(sheet)
+    out = out or paths["readings"] / f"{sheet.stem}.claude.json"
+    if not offline and not os.environ.get("ANTHROPIC_API_KEY") and not any((paths["recordings"]).glob("*.json")):
+        print("note: ANTHROPIC_API_KEY is not set and there are no recordings for this sheet; the API call will fail.")
+    print(f"reading {sheet} with {claude.MODEL} (effort {claude.EFFORT}); recordings in {paths['recordings']}")
+    try:
+        result = claude.read_plan(flat, det, recordings=paths["recordings"], offline=offline, max_turns=max_turns)
+    except claude.ReaderError as err:
+        raise SystemExit(f"reader failed: {err}")
+    except Exception as err:
+        import anthropic
+
+        if isinstance(err, anthropic.APIError) or "authentication method" in str(err):
+            raise SystemExit(f"reader could not use the API: {err}\nSet ANTHROPIC_API_KEY, or use --offline to replay recordings.")
+        raise
+    data = {"_run": {"model": claude.MODEL, "effort": claude.EFFORT, **result.summary()}, **result.reading.model_dump()}
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(data, indent=1) + "\n", encoding="utf-8")
+    r = result.reading
+    print(f"  {result.turns} turns, {result.views} views; {result.called} API calls, {result.replayed} replayed; served by {', '.join(result.served_by) or '-'}")
+    print(f"  usage: {result.usage}")
+    print(f"  read {len(r.center_points)} center points, {len(r.columns)} columns, {len(r.chains)} chains, {len(r.notes)} notes, {len(r.unreadable)} unreadable -> {out}")
+
+
+def cmd_draft(reading_path: Path, sheet: Path, out: Path | None, key: Path | None) -> None:
+    from architectworks.reader.draft import build_draft
+    from architectworks.reader.schema import load_reading
+
+    flat, det = _load_sheet(sheet)
+    draft = build_draft(load_reading(reading_path), flat, det).to_json()
+    out = out or reader_paths(sheet)["out"] / f"{reading_path.stem}.draft.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(draft, indent=1) + "\n", encoding="utf-8")
+    f = draft["fit"]
+    print(f"draft from {reading_path}: {len(draft['control'])} control points, {len(draft['pavilions'])} pavilions -> {out}")
+    print(f"  fit: {f.get('dimensioned_both_axes')} features dimensioned on both axes, residual {f.get('feature_residual_in')}")
+    for note in draft["review"]:
+        print(f"  [review] {note}")
+    if key:
+        cmd_score(out, key)
+
+
+def cmd_score(draft_path: Path, key_path: Path) -> dict:
+    from architectworks.reader.score import score
+
+    result = score(json.loads(draft_path.read_text(encoding="utf-8")), load_spec(key_path))
+    out = draft_path.with_name(draft_path.name.replace(".draft.json", "") + ".score.json")
+    out.write_text(json.dumps(result, indent=1) + "\n", encoding="utf-8")
+    s = result["summary"]
+    cp, pv = s["center_points"], s["pavilions"]
+    print(f"score against {key_path}: {s['right']}/{s['items']} ({s['score']:.0%})")
+    print(f"  center points: {cp['matched']}/{cp['key']} found, {cp['exact']} exact, {cp['within_2_in']} within 2 in; missed {cp['missed'] or 'none'}")
+    print(f"  pavilions: {pv['all_checks_pass']}/{pv['key']} fully right; missed {pv['missed'] or 'none'}")
+    for p in result["points"]:
+        if p.get("key") and not p["exact"]:
+            print(f"    {p['key']}: off by {p['error_in']} in ({p['dx_in']:+}, {p['dy_in']:+}); draft basis {p['draft_basis']}, key basis {p['key_basis']}")
+    for p in result["pavilions"]:
+        bad = [k for k, ok in p.get("checks", {}).items() if not ok]
+        if bad:
+            print(f"    {p['key']}: wrong {', '.join(bad)}")
+    print(f"  -> {out}")
+    return result
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="aw", description="ArchitectWorks: Building Spec -> Blender -> Unreal")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -127,7 +230,39 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("schema", help="print the Building Spec JSON Schema")
     p.add_argument("-o", "--out", type=Path)
 
+    p = sub.add_parser("detect", help="find candidate marks on a sheet photo")
+    p.add_argument("sheet", type=Path)
+    p.add_argument("-o", "--out", type=Path, help="directory (default projects/<p>/out/reader)")
+
+    p = sub.add_parser("read", help="have Claude read a plan sheet (needs ANTHROPIC_API_KEY unless replaying)")
+    p.add_argument("sheet", type=Path)
+    p.add_argument("-o", "--out", type=Path, help="reading file (default projects/<p>/readings/<sheet>.claude.json)")
+    p.add_argument("--offline", action="store_true", help="replay recordings only; never call the API")
+    p.add_argument("--max-turns", type=int, default=40)
+
+    p = sub.add_parser("draft", help="turn a reading into a draft spec")
+    p.add_argument("reading", type=Path)
+    p.add_argument("sheet", type=Path)
+    p.add_argument("-o", "--out", type=Path)
+    p.add_argument("--score", type=Path, metavar="SPEC", help="also score the draft against this spec")
+
+    p = sub.add_parser("score", help="score a draft against a hand-written spec")
+    p.add_argument("draft", type=Path)
+    p.add_argument("spec", type=Path)
+
     args = ap.parse_args(argv)
+    if args.cmd == "detect":
+        cmd_detect(args.sheet, args.out)
+        return 0
+    if args.cmd == "read":
+        cmd_read(args.sheet, args.out, args.offline, args.max_turns)
+        return 0
+    if args.cmd == "draft":
+        cmd_draft(args.reading, args.sheet, args.out, args.score)
+        return 0
+    if args.cmd == "score":
+        cmd_score(args.draft, args.spec)
+        return 0
     if args.cmd == "schema":
         text = json.dumps(json_schema(), indent=1) + "\n"
         if args.out:
