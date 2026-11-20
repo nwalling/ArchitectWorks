@@ -119,6 +119,65 @@ def rubble(mat: bpy.types.Material, rgb: tuple[float, float, float]) -> None:
     bsdf.inputs["Roughness"].default_value = 0.9
 
 
+def shingles(mat: bpy.types.Material, rgb: tuple[float, float, float]) -> None:
+    """Composition tab shingles for previews: level courses about 5" to the
+    weather (2 1/2" of height on these slopes) and 12" tabs, laid round the
+    object's own origin, which for a conical roof is the pavilion's centre."""
+    nt = mat.node_tree
+    nodes, links = nt.nodes, nt.links
+    bsdf = nodes.get("Principled BSDF")
+    tc = nodes.new("ShaderNodeTexCoord")
+    xyz = nodes.new("ShaderNodeSeparateXYZ")
+    links.new(tc.outputs["Object"], xyz.inputs["Vector"])
+    ang = nodes.new("ShaderNodeMath")
+    ang.operation = "ARCTAN2"
+    links.new(xyz.outputs["Y"], ang.inputs[0])
+    links.new(xyz.outputs["X"], ang.inputs[1])
+    flat = nodes.new("ShaderNodeCombineXYZ")
+    links.new(xyz.outputs["X"], flat.inputs["X"])
+    links.new(xyz.outputs["Y"], flat.inputs["Y"])
+    rad = nodes.new("ShaderNodeVectorMath")
+    rad.operation = "LENGTH"
+    links.new(flat.outputs["Vector"], rad.inputs[0])
+    arc = nodes.new("ShaderNodeMath")
+    arc.operation = "MULTIPLY"
+    links.new(ang.outputs["Value"], arc.inputs[0])
+    links.new(rad.outputs["Value"], arc.inputs[1])
+    s_ = nodes.new("ShaderNodeMath")
+    s_.operation = "MULTIPLY"
+    s_.inputs[1].default_value = 0.5 / 0.305  # 12" tabs
+    links.new(arc.outputs["Value"], s_.inputs[0])
+    t_ = nodes.new("ShaderNodeMath")
+    t_.operation = "MULTIPLY"
+    t_.inputs[1].default_value = 0.25 / 0.0635  # a course every 2 1/2" of height
+    links.new(xyz.outputs["Z"], t_.inputs[0])
+    uv = nodes.new("ShaderNodeCombineXYZ")
+    links.new(s_.outputs["Value"], uv.inputs["X"])
+    links.new(t_.outputs["Value"], uv.inputs["Y"])
+    brick = nodes.new("ShaderNodeTexBrick")
+    brick.offset = 0.5
+    brick.offset_frequency = 2
+    brick.inputs["Scale"].default_value = 1.0
+    brick.inputs["Mortar Size"].default_value = 0.006
+    brick.inputs["Brick Width"].default_value = 0.5
+    brick.inputs["Row Height"].default_value = 0.25
+    brick.inputs["Color1"].default_value = (*rgb, 1.0)
+    brick.inputs["Color2"].default_value = (rgb[0] * 0.78, rgb[1] * 0.78, rgb[2] * 0.78, 1.0)
+    brick.inputs["Mortar"].default_value = (rgb[0] * 0.35, rgb[1] * 0.35, rgb[2] * 0.35, 1.0)
+    links.new(uv.outputs["Vector"], brick.inputs["Vector"])
+    links.new(brick.outputs["Color"], bsdf.inputs["Base Color"])
+    inv = nodes.new("ShaderNodeMath")
+    inv.operation = "SUBTRACT"
+    inv.inputs[0].default_value = 1.0
+    links.new(brick.outputs["Fac"], inv.inputs[1])
+    bump = nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.5
+    bump.inputs["Distance"].default_value = 0.01
+    links.new(inv.outputs["Value"], bump.inputs["Height"])
+    links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+    bsdf.inputs["Roughness"].default_value = 0.85
+
+
 def make_materials(materials: dict) -> dict[str, bpy.types.Material]:
     """Flat-colour placeholders, or a procedural pattern where the spec names
     one. Spec colours are sRGB; Blender wants linear."""
@@ -138,11 +197,12 @@ def make_materials(materials: dict) -> dict[str, bpy.types.Material]:
             bsdf.inputs["Roughness"].default_value = 0.15 if m["translucent"] else 0.7
             if m["translucent"]:
                 bsdf.inputs["Alpha"].default_value = a
-            if m.get("pattern") == "rubble":
+            pattern = {"rubble": rubble, "shingles": shingles}.get(m.get("pattern"))
+            if pattern is not None:
                 try:
-                    rubble(mat, (r, g, b))
+                    pattern(mat, (r, g, b))
                 except (KeyError, AttributeError, RuntimeError) as err:  # node names differ between Blender versions
-                    log(f"warning: no rubble pattern for {name}: {err}")
+                    log(f"warning: no {m['pattern']} pattern for {name}: {err}")
         if m["translucent"]:
             for attr, value in (("surface_render_method", "BLENDED"), ("blend_method", "BLEND")):
                 try:

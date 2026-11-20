@@ -90,6 +90,8 @@ def plan_outlines(resolved: dict[str, Any], categories=("Envelope", "Structure")
             continue
         verts = [_apply(p["matrix"], v) for v in c["mesh"]["verts"]]
         zmin = min(v[2] for v in verts)
+        if zmin > 1.0:  # trellis, lantern, trim: not standing on a floor, not on a foundation plan
+            continue
         faces = []
         for f in c["mesh"]["faces"]:
             pts = [verts[i] for i in f]

@@ -39,11 +39,15 @@ levels:
     elev: 110'-9"
     src: {sheet: elevations, basis: dimensioned, quote: "T.O. COMP. RING @ BDRM/RM ELEV 110'-9\"", note: on both elevations}
   t_o_flat_roof:
-    elev: 107'-4"
-    src: {sheet: elevations, basis: measured, confidence: medium, note: "top of the flat roof scales 107'-4 1/2\" on the NW elevation, its fascia about 6\" deep: the deck sits just above the 107'-1 1/2\" top of header"}
+    elev: 107'-2"
+    src: {sheet: D-3, basis: dimensioned, confidence: medium, quote: "5'-8\" ... 10\" ... 8\"; BUILT-UP ROOF OVER 3\" INSUL. @ MUSIC RM.; 6x8 BEAM @ MUSIC ROOM",
+          note: "105'-8\" top of masonry, 10\" of sill and beam, 8\" of roof; the NW elevation scales 107'-4 1/2\""}
   u_s_flat_roof:
-    elev: 106'-10"
-    src: {sheet: elevations, basis: rule, note: "underside of the 6\" flat roof; walls under a flat roof are carried up to it"}
+    elev: 106'-6"
+    src: {sheet: D-3, basis: dimensioned, confidence: medium, note: "underside of the 8\" flat roof: 105'-8\" plus the 10\" of sill and 6x8 beam; walls under a flat roof are carried up to it"}
+  t_o_lantern_living:
+    elev: 109'-8"
+    src: {sheet: elevations, basis: measured, confidence: low, quote: "FIXED GL.", note: "top of the beam over the living room's clerestory scales 109'-8\" on the SW elevation"}
   t_o_flue_n:
     elev: 115'-3"
     src: {sheet: elevations, basis: measured, confidence: medium, quote: "FIREPLACE FLUE", note: "top of the ball scales 114'-11 3/4\" on the SW elevation and 115'-6\" on the NW (calibrated fits)"}
@@ -101,8 +105,9 @@ types:
     flue_metal: {unreal: M_MetalFlue, color: "#76797b"}
     redwood: {unreal: M_Redwood, color: "#8b4a32"}
     glass: {unreal: M_Glass, color: "#9fc3cf", translucent: true, opacity: 0.25}
-    shingle: {unreal: M_ShingleComposition, color: "#4d4a47"}
-    acrylic: {unreal: M_Acrylic, color: "#dfe9ec", translucent: true, opacity: 0.4}
+    steel: {unreal: M_SteelPainted, color: "#45484b"}
+    shingle: {unreal: M_ShingleComposition, color: "#4d4a47", pattern: shingles}
+    acrylic: {unreal: M_Acrylic, color: "#dcecf1", translucent: true, opacity: 0.22}
 
   profiles:
     conc_col:
@@ -181,16 +186,50 @@ types:
             note: "build-up assumed as 3/4\" deck + 3\" insulation + 3/4\" shingles; D-2 has the real one"}
     ring_comp:
       kind: ring
-      section: [4", 6"]
-      material: redwood
+      section: [1", 6"]
+      material: steel
       collision: false
-      src: {sheet: elevations, basis: assumed, note: size and material of the compression ring are not on these sheets}
+      src: {sheet: elevations, basis: assumed, note: "a steel ring where the rafters meet (owner's direction); its size is not on these sheets (D-2)"}
     roof_flat:
       kind: roof
-      thickness: 6"
+      thickness: 8"
       material: roofing_built_up
       src: {sheet: roof, basis: rule, quote: "ROOFING ON FLAT SURFACES TO BE 4 PLY BUILT-UP ROOF; ALL FLAT ROOFING TO SLOPE 1/4\" PER FT. TO DRAIN BY TAPERING INSULATION",
-            note: "edge depth scaled about 6\" on the NW elevation; the 1/4\" per foot drainage taper is not modelled"}
+            note: "8\" thick per D-3 (BUILT-UP ROOF OVER 3\" INSUL.); the 1/4\" per foot drainage taper is not modelled"}
+    fascia_1x8:
+      kind: beam
+      section: [1", 8"]
+      material: redwood
+      collision: false
+      src: {sheet: elevations, basis: assumed, quote: "ALL FRAMING LUMBER TO BE #2 CLOSE GRAIN REDWOOD", note: "the conical roofs' edge is drawn as a band over the rafter ends; board size assumed"}
+    trim_1x10:
+      kind: beam
+      section: [1", 10"]
+      material: redwood
+      collision: false
+      src: {sheet: D-3, basis: dimensioned, quote: "1\"x10\" WD. TRIM EA SIDE OF PL.", note: closes the space between the top of masonry and the roof}
+    trellis_bracket:
+      kind: beam
+      section: [4", 4"]
+      material: redwood
+      collision: false
+      src: {sheet: D-1, basis: dimensioned, quote: "2-4x4 TRELLIS SUPPORT BRACKET - BOLTS THRU 4x6 RAFTER"}
+    trellis_slat:
+      kind: beam
+      section: [2", 2"]
+      material: redwood
+      collision: false
+      src: {sheet: D-1, basis: dimensioned, quote: "2x2 TRELLIS @ 2'-0\" O.C."}
+    lantern_post:
+      kind: beam
+      section: [4", 4"]
+      material: redwood
+      src: {sheet: elevations, basis: assumed, note: "posts of the living room's clerestory; size assumed"}
+    glass_fixed:
+      kind: panel
+      thickness: 1"
+      material: glass
+      src: {sheet: elevations, basis: measured, confidence: low, quote: "FIXED GL."}
     skylight_glass:
       kind: panel
       thickness: 1"
@@ -243,6 +282,13 @@ elements:
       type: slab_4in
       edge_offset: 8"
       src: {basis: assumed, note: "slab edge carried 8\" past the glazing line to take the columns"}
+    trellis:
+      bracket: trellis_bracket
+      reach: 3'-4"
+      slat: trellis_slat
+      spacing: 1'-0"
+      src: {sheet: D-1, basis: dimensioned, confidence: medium, quote: "3'-4\" TO O.S. OF BRACKET; 2x2 TRELLIS @ 2'-0\" O.C.; RDWD. TRELLIS",
+            note: "the slats are lettered 2'-0\" on center, but D-1 and the roof plan both draw them about 1'-0\" apart, three to a side"}
     roof:
       glazed:
         panel: roof_glass
@@ -258,8 +304,10 @@ elements:
         type: rafter_4x6
         cone_spacing: 7.5deg
         src: {sheet: roof, basis: measured, quote: "4x6 RAFTERS TYPICAL", note: spacing on the curved side approximated}
+      eave: {fascia: fascia_1x8, frieze: trim_1x10, src: {sheet: D-3, basis: rule, quote: "1\"x10\" WD. TRIM EA SIDE OF PL.", note: "frieze from D-3; fascia over the rafter ends as the elevations draw the eave"}}
       ring:
         type: ring_comp
+        curb: 5"
         top: t_o_ring_bedroom
         measured_radius: 2'-3"
         measured_src: {sheet: elevations, basis: measured, confidence: low, note: "dome scales 4'-0\" to 4'-10\" across on the SW elevation"}
@@ -291,6 +339,13 @@ elements:
       type: slab_4in
       edge_offset: 8"
       src: {basis: assumed, note: "slab edge carried 8\" past the glazing line to take the columns"}
+    trellis:
+      bracket: trellis_bracket
+      reach: 3'-4"
+      slat: trellis_slat
+      spacing: 1'-0"
+      src: {sheet: D-1, basis: dimensioned, confidence: medium, quote: "3'-4\" TO O.S. OF BRACKET; 2x2 TRELLIS @ 2'-0\" O.C.; RDWD. TRELLIS",
+            note: "the slats are lettered 2'-0\" on center, but D-1 and the roof plan both draw them about 1'-0\" apart, three to a side"}
     roof:
       glazed:
         panel: roof_glass
@@ -306,8 +361,10 @@ elements:
         type: rafter_4x6
         cone_spacing: 7.5deg
         src: {sheet: roof, basis: measured, quote: "4x6 RAFTERS TYPICAL", note: spacing on the curved side approximated}
+      eave: {fascia: fascia_1x8, frieze: trim_1x10, src: {sheet: D-3, basis: rule, quote: "1\"x10\" WD. TRIM EA SIDE OF PL.", note: "frieze from D-3; fascia over the rafter ends as the elevations draw the eave"}}
       ring:
         type: ring_comp
+        curb: 5"
         top: t_o_ring_bedroom
         src: {basis: assumed, note: top of ring taken as the bedroom pavilion's}
       skylight: {type: skylight_dome}
@@ -338,6 +395,13 @@ elements:
       type: slab_4in
       edge_offset: 8"
       src: {basis: assumed, note: "slab edge carried 8\" past the glazing line to take the columns"}
+    trellis:
+      bracket: trellis_bracket
+      reach: 3'-4"
+      slat: trellis_slat
+      spacing: 1'-0"
+      src: {sheet: D-1, basis: dimensioned, confidence: medium, quote: "3'-4\" TO O.S. OF BRACKET; 2x2 TRELLIS @ 2'-0\" O.C.; RDWD. TRELLIS",
+            note: "the slats are lettered 2'-0\" on center, but D-1 and the roof plan both draw them about 1'-0\" apart, three to a side"}
     roof:
       glazed:
         panel: roof_glass
@@ -353,8 +417,10 @@ elements:
         type: rafter_4x6
         cone_spacing: 10deg
         src: {sheet: roof, basis: measured, quote: "4x6 RAFTERS TYPICAL", note: spacing approximated}
+      eave: {fascia: fascia_1x8, frieze: trim_1x10, src: {sheet: D-3, basis: rule, quote: "1\"x10\" WD. TRIM EA SIDE OF PL.", note: "frieze from D-3; fascia over the rafter ends as the elevations draw the eave"}}
       ring:
         type: ring_comp
+        curb: 5"
         radius: 1'-6"
         src: {sheet: roof, basis: assumed, note: "no top of ring is lettered for the small pavilions; radius assumed, top derived from the 30 degree pitch"}
       skylight: {type: skylight_dome}
@@ -385,6 +451,13 @@ elements:
       type: slab_4in
       edge_offset: 8"
       src: {basis: assumed, note: "slab edge carried 8\" past the glazing line to take the columns"}
+    trellis:
+      bracket: trellis_bracket
+      reach: 3'-4"
+      slat: trellis_slat
+      spacing: 1'-0"
+      src: {sheet: D-1, basis: dimensioned, confidence: medium, quote: "3'-4\" TO O.S. OF BRACKET; 2x2 TRELLIS @ 2'-0\" O.C.; RDWD. TRELLIS",
+            note: "the slats are lettered 2'-0\" on center, but D-1 and the roof plan both draw them about 1'-0\" apart, three to a side"}
     roof:
       glazed:
         panel: roof_glass
@@ -400,8 +473,10 @@ elements:
         type: rafter_4x6
         cone_spacing: 10deg
         src: {sheet: roof, basis: measured, quote: "4x6 RAFTERS TYPICAL", note: spacing approximated}
+      eave: {fascia: fascia_1x8, frieze: trim_1x10, src: {sheet: D-3, basis: rule, quote: "1\"x10\" WD. TRIM EA SIDE OF PL.", note: "frieze from D-3; fascia over the rafter ends as the elevations draw the eave"}}
       ring:
         type: ring_comp
+        curb: 5"
         radius: 1'-6"
         src: {sheet: roof, basis: assumed, note: "no top of ring is lettered for the small pavilions; radius assumed, top derived from the 30 degree pitch"}
       skylight: {type: skylight_dome}
@@ -438,18 +513,29 @@ elements:
         eave_overhang: 1'-0"
         span: arcs
         nominal_pitch: 30deg
-        src: {sheet: roof, basis: measured, confidence: low, note: "only the part over the big arc is modelled; how the roof meets the glass east of the hearth is not readable on these sheets"}
+        src: {sheet: roof, basis: measured, confidence: low, note: "the cone covers the big arc; east of it the SW elevation draws a glass lantern over the small hexagon"}
       sill: {type: sill_2x6}
       rafters:
         type: rafter_4x6
         cone_spacing: 7.5deg
         src: {sheet: roof, basis: measured, quote: "4x6 RAFTERS TYPICAL"}
+      eave: {fascia: fascia_1x8, frieze: trim_1x10, src: {sheet: D-3, basis: rule, quote: "1\"x10\" WD. TRIM EA SIDE OF PL.", note: "frieze from D-3; fascia over the rafter ends as the elevations draw the eave"}}
       ring:
         type: ring_comp
+        curb: 5"
         top: t_o_ring_living
         radius: 2'-0"
         src: {sheet: roof, basis: assumed, note: ring radius assumed}
       skylight: {type: skylight_dome}
+      lantern:
+        top: t_o_lantern_living
+        sides: [4, 5, 0, 1]
+        panel: glass_fixed
+        roof_panel: roof_glass
+        header: header_6x6
+        post: lantern_post
+        src: {sheet: elevations, basis: measured, confidence: low, quote: "FIXED GL.",
+              note: "the SW elevation draws fixed glass between posts above the living room's header, a beam at 109'-8\", and glass facets up to the ring; on the sides the cone does not cover"}
   - id: hearth
     pattern: stone_ring
     name: Hearth
@@ -576,15 +662,17 @@ elements:
           note: "one flat roof from the living room to the south-east pavilion: the music room (beams across it, 1'-0\" past the stone face), the hall north of it and the strip between the center and south-east pavilions down to the south core; seen side on in the NW elevation"}
     skylights:
       - type: skylight_glass
+        form: gable
         frame: skylight_frame
         center: [8'-7", -40'-6"]
         length: 8'-6"
-        depth: 2'-6"
-        rise: 2'-3"
-        rises_toward: 90deg
+        width: 2'-8"
+        rise: 2'-5"
+        axis: 0deg
         beam_overhang: 2'-0"
+        beam_lift: 7"
         src: {sheet: elevations, basis: measured, confidence: low, quote: "TEMP. GLASS SKYLIGHT (SEE ROOF FRMG PLAN)",
-              note: "length, rise and ridge-beam overhang scale off the NW elevation, which also fixes its east-west position; its north-south position and depth are not readable on the roof plan photo and are assumed (on the music room roof, 3'-0\" north of its C.P.)"}
+              note: "a gable: length, rise, the triangular end (2'-8\" across) and the ridge beam's overhang and turned-up tips scale off the NW elevation, which also fixes its east-west position; its north-south position is not readable on the roof plan photo and is assumed (on the music room roof, 3'-0\" north of its C.P.)"}
   - id: link_tl_tr
     pattern: link
     kind: glazed
@@ -669,7 +757,7 @@ open_items:
     effect: "outlines from named points on the roof plan, top scaled off the NW elevation; beams, joists, the 1/4\" per foot drainage taper and the turned-up beam ends are not modelled. D-2 has the real build-up"
   - kind: assumption
     what: music room skylight
-    effect: east-west position, length and rise from the NW elevation; north-south position and depth assumed
+    effect: east-west position, length, rise and gable end from the NW elevation; north-south position assumed
   - kind: assumption
     what: links between pavilions
     effect: five glazed links are modelled where the plan draws glazing; other connections (music room to the south-east pavilion, the hall walls) are not yet read

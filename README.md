@@ -6,7 +6,7 @@ It works the way a careful person would: read the drawings into a plain-text des
 
 ![The example house, built from the hand-written spec](docs/images/house.jpg)
 
-*The example house, generated from [`house.yaml`](projects/example-house/house.yaml) and rendered headless in Blender 5.2, from the stone side: six pavilions, a stair tower, the music room, two round cores with their flues, the flat roofs and glazed links between them. 74 unique meshes, 241 placements.*
+*The example house, generated from [`house.yaml`](projects/example-house/house.yaml) and rendered headless in Blender 5.2, from the stone side: six pavilions, a stair tower, the music room, two round cores with their flues, the flat roofs, trellises and glazed links between them. 90 unique meshes, 296 placements.*
 
 ## Phase 2 status: reading the sheets
 
@@ -98,7 +98,7 @@ The fireplace flues are the independent check. Nothing about them went into the 
 
 | What | Where it comes from |
 | --- | --- |
-| Three flat roofs: the strip between the north pavilions, the north-west hall and stair tower, and one over the music room and the halls round it | Outlines from named points on the roof plan; top at 107'-4" scaled off the NW elevation. Each is cut back wherever a pavilion roof rises above it, so the two meet along the line where one passes through the other. "ROOFING ON FLAT SURFACES TO BE 4 PLY BUILT-UP ROOF" |
+| Three flat roofs: the strip between the north pavilions, the north-west hall and stair tower, and one over the music room and the halls round it | Outlines from named points on the roof plan; top at 107'-2" from D-3 (the NW elevation scales 107'-4"). Each is cut back wherever a pavilion roof rises above it, so the two meet along the line where one passes through the other. "ROOFING ON FLAT SURFACES TO BE 4 PLY BUILT-UP ROOF" |
 | Glass skylight on the music room roof | Length, rise and ridge-beam overhang from the NW elevation; where it sits north to south is assumed. "ALL SKYLIGHTS TO BE 2 LAYERS OF TEMPERED 1/4" GLASS" |
 | Two fireplace flues with ball caps | Plan from the roof plan and both elevations; tops at 115'-3" and 114'-8", 12" pipe, 19" ball |
 | Stone walls from the living room to the music room and from the music room to the south-east pavilion | The NW elevation draws stone there without a break |
@@ -109,7 +109,19 @@ The fireplace flues are the independent check. Nothing about them went into the 
 
 [The southwest elevation](docs/images/elevation-southwest.jpg) compares the same way, and [the glass side](docs/images/house-glass-side.jpg) of the house now shows the flat roofs and flues too.
 
-What the comparison still shows: the model's music room sits about 2'-0" further south than the southwest elevation draws it; the living room's east side is drawn with a glazed gable the model does not have; the flat roofs' turned-up beam ends and the 1/4" per foot drainage taper are not modelled.
+A second pass, after review against the drawings, added:
+
+| What | Where it comes from |
+| --- | --- |
+| The skylight is a gable: glass on both slopes, triangular ends 2'-8" across, the ridge beam's tips turned up 7" | NW elevation |
+| Redwood trellis outside every glazed side: a pair of 4x4 brackets along the rafter at each column, reaching 3'-4", and 2x2 slats across them | D-1: "2-4x4 TRELLIS SUPPORT BRACKET", "3'-4" TO O.S. OF BRACKET"; the roof plan draws three slats to a side |
+| A glass lantern on the living room: posts and fixed glass above the header to a beam at 109'-8", glass facets up to the ring | SW elevation ("FIXED GL.") |
+| Steel compression rings standing 5" above the roofing as the skylight curb, clear domes on top | The owner's direction; the elevations draw the band |
+| A fascia over the rafter tails, and D-3's trim from the top of masonry up to the roof | D-3: "1"x10" WD. TRIM EA SIDE OF PL." |
+| Shingle courses on the conical roofs in the previews | "ROOFING ON 30° SLOPES TO BE COMPOSITION TAB LOCK SHINGLES" |
+| Flat roof top 107'-2" and 8" thick | D-3: 5'-8" of masonry, 10" of sill and beam, 8" of roof |
+
+What the comparison still shows: the model's music room sits about 2'-0" further south than the southwest elevation draws it; the living room's east side is drawn with a glazed gable the model does not have; the living room's cone still stops at the edge of its stone arc, so its underside shows beside the lantern; the slats are lettered "2'-0" O.C." but drawn about 1'-0" apart, and the model follows the drawing; the flat roofs' 1/4" per foot drainage taper is not modelled.
 
 ## Phase 0 status
 

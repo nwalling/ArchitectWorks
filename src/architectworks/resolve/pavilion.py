@@ -150,6 +150,8 @@ def expand_pavilion(spec: BuildingSpec, el: RadialPavilion, model: Model) -> Non
     model.points[el.id] = c.world_xy((0.0, 0.0, 0.0))
 
     col_outer = _columns_headers_doors(c, G, glazed_vertices)
+    if el.trellis is not None and glazed_vertices:
+        _trellis(c, G, glazed_vertices)
     tops = _stone_arcs(c, arcs, col_outer)
     _footprint(c, glazed_vertices, arcs)
     if el.roof is not None:
@@ -429,6 +431,35 @@ def _roof(c: Ctx, G: list[int], glazed_vertices: list[int], rest: tuple[float, f
     cs = roof.conical.src
     c.place("roof_conical", cone_name, rotation_z(0.0), cs.basis, cs.confidence, src_dict(cs, type=roof.conical.type, note=f"slope {slope_basis}"))
 
+    # ---- eave trim: fascia over the rafter tails, frieze from wall to roof ----
+    if roof.eave is not None:
+        ev = roof.eave
+        fas_t = c.ctype(ev.fascia)
+        t_f, d_f = (to_metres(v) for v in fas_t.section)
+        z_lo_drop = d_r / math.cos(slope)
+        fas_meshes, fri_meshes = [], []
+        for i, (a, a0, a1) in enumerate(arcs):
+            seg = segments_for(a1 - a0, a.segments_per_90)
+            R_e = c.ctype(a.type).wall_radii(to_metres(a.radius_outside), to_metres)[1] + eave_overhang
+            z_e0 = cone_z(R_e)
+            fas_meshes.append(g.annular_sector(R_e, R_e + t_f, a0, a1, seg, min(z_e0 - z_lo_drop, z_e0 + t_v - d_f), z_e0 + t_v))
+            if ev.frieze is not None:
+                R_in, R_out, _ = c.ctype(a.type).wall_radii(to_metres(a.radius_outside), to_metres)
+                z_w = tops[i]
+                if cone_z(R_out) > z_w + 1e-4:
+                    sections = [g.radial_section(t, [(R_in, z_w), (R_out, z_w), (R_out, cone_z(R_out)), (R_in, cone_z(R_in))]) for t in g.angles(a0, a1, seg)]
+                    fri_meshes.append(g.loft(sections))
+        ev_src = src_dict(ev.src)
+        if fas_meshes:
+            mat, nanite = c.material(fas_t)
+            name = model.unique(f"{c.prefix}_{camel(eid)}_Fascia", "Roof", g.merge(fas_meshes), mat, [], nanite, c.tsrc(ev.fascia))
+            c.place("fascia", name, rotation_z(0.0), ev.src.basis, ev.src.confidence, ev_src)
+        if fri_meshes:
+            fri_t = c.ctype(ev.frieze)
+            mat, nanite = c.material(fri_t)
+            name = model.unique(f"{c.prefix}_{camel(eid)}_Frieze", "Envelope", g.merge(fri_meshes), mat, [], nanite, c.tsrc(ev.frieze))
+            c.place("frieze", name, rotation_z(0.0), ev.src.basis, ev.src.confidence, ev_src)
+
     # ---- rafters ----
     mat, nanite = c.material(raf_t)
     raf_src = src_dict(roof.rafters.src) if roof.rafters.src else c.tsrc(roof.rafters.type)
@@ -467,17 +498,22 @@ def _roof(c: Ctx, G: list[int], glazed_vertices: list[int], rest: tuple[float, f
         c.place(f"sill{suffix}", sill_name, rotation_z(0.0), sill_t.src.basis, sill_t.src.confidence, c.tsrc(roof.sill.type))
 
     # ---- compression ring and skylight ----
+    if roof.lantern is not None:
+        _lantern(c, r_ring, z_rt)
+
     ring_t = c.ctype(ring.type)
     w_ring, d_ring = (to_metres(v) for v in ring_t.section)
     mat, nanite = c.material(ring_t)
-    ring_name = model.unique(f"{c.prefix}_{camel(eid)}_CompressionRing", "Structure", g.ring(r_ring - w_ring, r_ring, z_rt - d_ring, z_rt, 48), mat, [], nanite, c.tsrc(ring.type))
+    # the band runs on up through the roofing as the skylight's curb
+    z_band = z_rt + (t_v + to_metres(ring.curb) if ring.curb else 0.0)
+    ring_name = model.unique(f"{c.prefix}_{camel(eid)}_CompressionRing", "Structure", g.ring(r_ring - w_ring, r_ring, z_rt - d_ring, z_band, 48), mat, [], nanite, c.tsrc(ring.type))
     ring_src = c.spec.levels[ring.top].src if ring.top else (ring.src or ring_t.src)
     c.place("ring", ring_name, rotation_z(0.0), "rule", ring_src.confidence, src_dict(ring_src, note=ring_basis))
     if roof.skylight is not None:
         dome_t = c.ctype(roof.skylight.type)
         mat, nanite = c.material(dome_t)
         dome_name = model.shared(c.prefix, camel(roof.skylight.type), "Roof", g.dome(r_ring - w_ring / 2, to_metres(dome_t.rise), segments=48, rings=8), mat, [], nanite, c.tsrc(roof.skylight.type))
-        c.place("skylight", dome_name, translation((0.0, 0.0, z_rt)), dome_t.src.basis, dome_t.src.confidence, c.tsrc(roof.skylight.type))
+        c.place("skylight", dome_name, translation((0.0, 0.0, z_band)), dome_t.src.basis, dome_t.src.confidence, c.tsrc(roof.skylight.type))
 
     # ---- derived values and cross-checks ----
     deg = math.degrees
@@ -532,3 +568,104 @@ def close_check(cid: str, what: str, measured: float, expected: float, tol: floa
         message=f"{what}: {fmt_m(measured)} vs {fmt_m(expected)} ({diff / INCH:+.2f} in)",
         values={"measured": fmt_m(measured), "expected": fmt_m(expected), "difference_in": round(diff / INCH, 3)},
     )
+
+
+# ---- lantern -------------------------------------------------------------------------
+
+
+def _lantern(c: Ctx, r_ring: float, z_rt: float) -> None:
+    """Posts and fixed glass from the header to the lantern's header on the
+    listed sides, and a glass facet from there to the compression ring over
+    each of them."""
+    el, model, lan = c.el, c.model, c.el.roof.lantern
+    z_h0 = c.level_z(el.header.top) - c.z_f
+    z_l = c.level_z(lan.top) - c.z_f
+    hdr_t, post_t = c.ctype(lan.header), c.ctype(lan.post)
+    w_h, d_h = (to_metres(v) for v in hdr_t.section)
+    w_p = to_metres(post_t.section[0])
+    if z_l - d_h <= z_h0:
+        raise ValueError(f"{el.id}: the lantern's header is not above the pavilion's header")
+    src = src_dict(lan.src)
+    sides = sorted({k % c.n for k in lan.sides})
+    verts = sorted({k for s_ in sides for k in (s_, (s_ + 1) % c.n)})
+    post = g.box(-w_p / 2, w_p / 2, -w_p / 2, w_p / 2, z_h0, z_l - d_h)
+    mat, nanite = c.material(post_t)
+    post_name = model.shared(c.prefix, camel(lan.post) + "Post", "Structure", post, mat, [post], nanite, c.tsrc(lan.post))
+    for k in verts:
+        c.place(f"lantern.post.v{k}", post_name, matmul(translation(c.vertex(k)), rotation_z(k * c.step)), lan.src.basis, lan.src.confidence, src)
+    hdr = g.box(0.0, c.side, -w_h / 2, w_h / 2, -d_h, 0.0)
+    mat, nanite = c.material(hdr_t)
+    hdr_name = model.shared(c.prefix, camel(lan.header), "Structure", hdr, mat, [hdr] if hdr_t.collision else [], nanite, c.tsrc(lan.header))
+    pan_t = c.ctype(lan.panel)
+    th = to_metres(pan_t.thickness)
+    pane = g.box(w_p / 2, c.side - w_p / 2, -th / 2, th / 2, z_h0, z_l - d_h)
+    mat, nanite = c.material(pan_t)
+    pane_name = model.shared(c.prefix, camel(lan.panel) + "Lantern", "Envelope", pane, mat, [pane] if pan_t.collision else [], nanite, c.tsrc(lan.panel))
+    for k in sides:
+        local, _ = member_frame(c.vertex(k, z=z_l), c.vertex(k + 1, z=z_l))
+        c.place(f"lantern.header.s{k}", hdr_name, local, lan.src.basis, lan.src.confidence, src)
+        p0, p1 = c.vertex(k), c.vertex(k + 1)
+        d = g.unit(g.sub(p1, p0))
+        c.place(f"lantern.glass.s{k}", pane_name, frame(p0, d, g.cross(Z, d), Z), lan.src.basis, lan.src.confidence, src)
+    # glass facets: through the header's top edge, meeting the top of the ring
+    # at the facet's corners (the band covers the rest)
+    rf_t = c.ctype(lan.roof_panel)
+    t_g = to_metres(rf_t.thickness)
+    tan_p = (z_rt - z_l) / (c.apothem - r_ring * math.cos(c.half))
+    u = g.polar(1.0, 0.5 * c.step)
+
+    def fz(p: Vec3) -> float:
+        return z_l + (c.apothem - g.dot((p[0], p[1], 0.0), u)) * tan_p
+
+    inner = [g.polar(r_ring, c.step * (8 - i) / 8) for i in range(9)]
+    facet = g.plate([c.vertex(0, z=z_l), c.vertex(1, z=z_l)] + [(p[0], p[1], fz(p)) for p in inner], t_g)
+    mat, nanite = c.material(rf_t)
+    facet_name = model.shared(c.prefix, camel(lan.roof_panel) + "Lantern", "Roof", facet, mat, [], nanite, c.tsrc(lan.roof_panel))
+    for k in sides:
+        c.place(f"lantern.roof.s{k}", facet_name, rotation_z(k * c.step), lan.src.basis, lan.src.confidence, src)
+    model.derived.setdefault(el.id, {})["lantern_pitch_deg"] = round(math.degrees(math.atan(tan_p)), 1)
+
+
+# ---- trellis -------------------------------------------------------------------------
+
+
+def _trellis(c: Ctx, G: list[int], glazed_vertices: list[int]) -> None:
+    """A pair of brackets along the rafter at each glazed column, level with
+    the bottom of the header, and slats on top of them across each glazed
+    side, outermost first, every ``spacing``."""
+    el, model, tr = c.el, c.model, c.el.trellis
+    hdr_t = c.ctype(el.header.type)
+    z_hb = c.level_z(el.header.top) - c.z_f - to_metres(hdr_t.section[1])
+    br_t, sl_t = c.ctype(tr.bracket), c.ctype(tr.slat)
+    w_b, d_b = (to_metres(v) for v in br_t.section)
+    w_s, d_s = (to_metres(v) for v in sl_t.section)
+    w_r = to_metres(c.ctype(el.roof.rafters.type).section[0]) if el.roof is not None else 4 * INCH
+    reach, spacing = to_metres(tr.reach), to_metres(tr.spacing)
+    src = src_dict(tr.src)
+    y0 = (w_r + w_b) / 2
+    pair = g.merge([g.box(0.0, reach, y - w_b / 2, y + w_b / 2, z_hb, z_hb + d_b) for y in (-y0, y0)])
+    mat, nanite = c.material(br_t)
+    pair_name = model.shared(c.prefix, camel(tr.bracket) + "Pair", "Structure", pair, mat, [], nanite, c.tsrc(tr.bracket))
+    for k in glazed_vertices:
+        c.place(f"trellis.bracket.v{k % c.n}", pair_name, matmul(translation(c.vertex(k)), rotation_z(k * c.step)), tr.src.basis, tr.src.confidence, src)
+    # slats for side 0, between the brackets at vertices 0 and 1
+    slats = []
+    s_ = reach - w_s / 2
+    keep_clear = to_metres(hdr_t.section[0]) / 2 + 3 * INCH
+    end_over = 3 * INCH
+    while s_ * math.cos(c.half) > keep_clear:
+        a = g.add(c.vertex(0), g.polar(s_, 0.0))
+        b = g.add(c.vertex(1), g.polar(s_, c.step))
+        d = g.unit(g.sub(b, a))
+        length = g.norm(g.sub(b, a))
+        local = frame(g.sub(a, g.scale(d, end_over)), d, g.cross(Z, d), Z)
+        box = g.box(0.0, length + 2 * end_over, -w_s / 2, w_s / 2, z_hb + d_b, z_hb + d_b + d_s)
+        slats.append(box.transformed(lambda v, m=local: apply(m, v)))
+        s_ -= spacing
+    if slats:
+        mesh = g.merge(slats)
+        mat, nanite = c.material(sl_t)
+        sl_name = model.shared(c.prefix, camel(tr.slat) + "Slats", "Structure", mesh, mat, [], nanite, c.tsrc(tr.slat))
+        for k in G:
+            c.place(f"trellis.slats.s{k % c.n}", sl_name, rotation_z(k * c.step), tr.src.basis, tr.src.confidence, src)
+    model.derived.setdefault(el.id, {})["trellis_slats_per_side"] = len(slats)

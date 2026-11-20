@@ -76,7 +76,7 @@ class Material(Strict):
     color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
     translucent: bool = False
     opacity: float = 1.0
-    pattern: Literal["rubble"] | None = Field(None, description="procedural surface for previews (Blender); Unreal gets the material slot only")
+    pattern: Literal["rubble", "shingles"] | None = Field(None, description="procedural surface for previews (Blender); Unreal gets the material slot only")
 
 
 class Profile(Strict):
@@ -194,6 +194,7 @@ class SillSpec(TypeRef):
 
 class RingSpec(TypeRef):
     top: str | None = Field(None, description="level id of the top of the compression ring")
+    curb: Length = Field(Fraction(0), description="how far the ring's band stands above the roofing, as the skylight's curb")
     radius: Length | None = Field(None, description="outside radius, when it is given rather than derived")
     measured_radius: Length | None = Field(None, description="radius scaled off a sheet, for cross-checking")
     measured_src: Source | None = None
@@ -210,6 +211,41 @@ class RafterSpec(TypeRef):
     glazed_midspan: bool = True
 
 
+class EaveSpec(Strict):
+    """Trim that closes the conical roof's edges: a fascia over the rafter
+    tails at the eave, and a frieze from the top of the stone wall up to the
+    underside of the roof."""
+
+    fascia: str = Field(description="a beam type: thickness and depth of the fascia board")
+    frieze: str | None = Field(None, description="a beam type for the frieze above the stone arcs")
+    src: Source
+
+
+class LanternSpec(Strict):
+    """A raised glass lantern on the pavilion's own hexagon: posts and fixed
+    glass from the header up to a second header, and glass facets from there
+    to the compression ring."""
+
+    top: str = Field(description="level id of the top of the lantern's header")
+    sides: list[int] = Field(min_length=1)
+    panel: str = Field(description="panel type for the fixed glass")
+    roof_panel: str = Field(description="panel type for the glass facets")
+    header: str = Field(description="beam type of the lantern's header")
+    post: str = Field(description="beam type of the posts, section across")
+    src: Source
+
+
+class TrellisSpec(Strict):
+    """Redwood trellis outside the glazed sides: a pair of brackets along the
+    rafter at every glazed column, slats across them parallel to each side."""
+
+    bracket: str = Field(description="beam type of each of the two brackets")
+    reach: Length = Field(description="from the column's centre point to the outside of the bracket")
+    slat: str = Field(description="beam type of the slats")
+    spacing: Length
+    src: Source
+
+
 class RoofSpec(Strict):
     glazed: GlazedRoofSpec | None = None
     conical: ConicalRoofSpec
@@ -217,6 +253,8 @@ class RoofSpec(Strict):
     rafters: RafterSpec
     ring: RingSpec
     skylight: TypeRef | None = None
+    eave: EaveSpec | None = None
+    lantern: LanternSpec | None = None
 
 
 def contiguous_run(sides: list[int], n: int) -> tuple[int, int]:
@@ -247,6 +285,7 @@ class RadialPavilion(Strict):
     stone_arcs: list[StoneArcSpec] = []
     slab: SlabSpec
     roof: RoofSpec | None = None
+    trellis: TrellisSpec | None = None
 
     @model_validator(mode="after")
     def _sides(self) -> "RadialPavilion":
@@ -321,18 +360,21 @@ class OutlineCircle(Strict):
     radius: Length
 
 
-class ShedSkylight(TypeRef):
-    """A lean-to glass skylight standing on a flat roof: the glass rises from
-    a low edge on the roof to a high edge ``rise`` above it, with a back
-    panel and two triangular ends."""
+class FlatRoofSkylight(TypeRef):
+    """A glass skylight standing on a flat roof. A gable has glass on both
+    slopes and triangular ends; a shed has one slope, a back and two
+    right-triangle ends, rising to the left of ``axis``. A ridge beam runs
+    along the top and past the ends, its tips turned up by ``beam_lift``."""
 
+    form: Literal["gable", "shed"] = "gable"
     center: tuple[Length, Length] = Field(description="plan centre of the skylight's footprint")
-    length: Length = Field(description="along the edges")
-    depth: Length = Field(description="from the low edge to the high edge, in plan")
+    length: Length = Field(description="along the ridge")
+    width: Length = Field(description="across the ridge in plan: eave to eave (gable), low edge to high edge (shed)")
     rise: Length
-    rises_toward: Angle = Field(description="plan direction from the low edge to the high edge, counter-clockwise from +X")
+    axis: Angle = Field(description="plan direction of the ridge, counter-clockwise from +X")
     frame: str = Field(description="type of the ends, back and ridge beam")
     beam_overhang: Length = Field(Fraction(0), description="how far the ridge beam runs past each end")
+    beam_lift: Length = Field(Fraction(0), description="how far the ridge beam's tips turn up")
 
 
 class FlatRoof(Strict):
@@ -348,7 +390,7 @@ class FlatRoof(Strict):
     outline: list[PointRef] = Field(min_length=3, description="named points or plan coordinates, in order")
     circles: list[OutlineCircle] = Field([], description="round pieces added to the outline")
     trim: bool = Field(True, description="cut away wherever another roof is above this one")
-    skylights: list[ShedSkylight] = []
+    skylights: list[FlatRoofSkylight] = []
     src: Source
 
 
@@ -509,6 +551,18 @@ class BuildingSpec(Strict):
                 type_ok(r.rafters.type, "beam", w)
                 type_ok(r.ring.type, "ring", w)
                 type_ok(r.skylight.type if r.skylight else None, "dome", w)
+                if r.eave:
+                    type_ok(r.eave.fascia, "beam", w)
+                    type_ok(r.eave.frieze, "beam", w)
+                if r.lantern:
+                    level_ok(r.lantern.top, w)
+                    type_ok(r.lantern.panel, "panel", w)
+                    type_ok(r.lantern.roof_panel, "panel", w)
+                    type_ok(r.lantern.header, "beam", w)
+                    type_ok(r.lantern.post, "beam", w)
+            if el.trellis:
+                type_ok(el.trellis.bracket, "beam", w)
+                type_ok(el.trellis.slat, "beam", w)
                 if not r.glazed and (r.ring.top is None or r.ring.radius is None) and not el.stone_arcs:
                     errors.append(f"{w}: without a glazed roof the ring needs both its top and its radius, or a stone arc to bear on")
         for ch in self.checks.chains:

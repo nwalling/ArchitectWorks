@@ -56,13 +56,13 @@ def test_sphere_and_cylinder_are_closed():
 def test_flat_roofs_cover_the_halls(house):
     roofs = house["derived"]["flat_roofs"]
     assert set(roofs) == {"roof_hall_n", "roof_hall_nw", "roof_hall_s"}
-    top = (107 + 4 / 12 - 100) * FT
+    top = (107 + 2 / 12 - 100) * FT
     for rid, info in roofs.items():
         assert info["parts"] == 1, rid
         assert info["top_m"] == pytest.approx(top, abs=1e-4)
         verts = _world_verts(house, _placements(house, rid)[0])
         assert verts[:, 2].max() == pytest.approx(top, abs=1e-4)
-        assert verts[:, 2].min() == pytest.approx(top - 6 * IN, abs=1e-4)
+        assert verts[:, 2].min() == pytest.approx(top - 8 * IN, abs=1e-4)
     # the music room and the halls round it: about 400 sq ft
     assert 33.0 < roofs["roof_hall_s"]["area_m2"] < 42.0
     # the strip between the north pavilions: about 5 ft wide and 15 ft long, with its round end
@@ -85,7 +85,7 @@ def test_flat_roofs_stop_where_pavilion_roofs_rise_above_them(house_spec, house)
 
                 model.components[p["component"]] = Component(p["component"], "Roof", Mesh([tuple(v) for v in c["mesh"]["verts"]], [tuple(f) for f in c["mesh"]["faces"]]), "M", [], True, {})
             model.placements.append(Placement(p["id"], p["component"], "Roof", p["matrix"], p["element"], "rule", "high", {}))
-    top = (107 + 4 / 12 - 100) * FT
+    top = (107 + 2 / 12 - 100) * FT
     above = roof_above(model, top, skip_element="")
     for rid in house["derived"]["flat_roofs"]:
         verts = _world_verts(house, _placements(house, rid)[0])
@@ -94,19 +94,26 @@ def test_flat_roofs_stop_where_pavilion_roofs_rise_above_them(house_spec, house)
         assert not inside, f"{rid}: {len(inside)} vertices under a pavilion roof"
 
 
-def test_skylight_stands_on_the_music_room_roof(house):
+def test_skylight_is_a_gable_on_the_music_room_roof(house):
     glass = next(p for p in house["placements"] if p["id"] == "roof_hall_s.skylight0.glass")
     v = _world_verts(house, glass)
-    top = (107 + 4 / 12 - 100) * FT
+    top = (107 + 2 / 12 - 100) * FT
+    rise = (2 + 5 / 12) * FT
     assert v[:, 2].min() == pytest.approx(top, abs=1e-3)
-    assert v[:, 2].max() == pytest.approx(top + (2 + 3 / 12) * FT, abs=0.03)
+    assert v[:, 2].max() == pytest.approx(top + rise, abs=0.03)
     music = np.array(house["points"]["cp_music"])
-    centre = v[:, :2].mean(axis=0)
-    assert np.hypot(*(centre - music)) < 4.0  # on the music room roof
-    # the glass rises toward plan +Y, so the NW elevation sees its face
-    hi = v[v[:, 2] > v[:, 2].max() - 0.05][:, 1].mean()
-    lo = v[v[:, 2] < top + 0.05][:, 1].mean()
-    assert hi > lo
+    assert np.hypot(*(v[:, :2].mean(axis=0) - music)) < 4.0  # on the music room roof
+    # glass on both slopes: low edges either side of the ridge, 2'-8" apart
+    ridge_y = v[v[:, 2] > top + rise - 0.01][:, 1].mean()
+    low = v[v[:, 2] < top + 0.01][:, 1]
+    assert low.min() < ridge_y - 0.3 and low.max() > ridge_y + 0.3
+    assert low.max() - low.min() == pytest.approx((2 + 8 / 12) * FT, abs=0.01)
+    # the ridge beam's tips turn up 7" past the ends
+    frame = next(p for p in house["placements"] if p["id"] == "roof_hall_s.skylight0.frame")
+    f = _world_verts(house, frame)
+    beam_top = top + rise + 4 * IN
+    assert f[:, 2].max() == pytest.approx(beam_top + 7 * IN, abs=0.02)
+    assert np.ptp(f[:, 0]) == pytest.approx((8 + 6 / 12 + 4) * FT, abs=0.08)  # 8'-6" plus 2'-0" each end, tips tilted
 
 
 @pytest.mark.parametrize("flue, top_ft", [("flue_n", 115 + 3 / 12), ("flue_s", 114 + 8 / 12)])
@@ -126,7 +133,7 @@ def test_new_stone_walls_close_the_music_room(house):
     for lid in ("link_living_music", "link_music_br"):
         (wall,) = _placements(house, lid)
         v = _world_verts(house, wall)
-        assert v[:, 2].max() == pytest.approx((106 + 10 / 12 - 100) * FT, abs=1e-4)
+        assert v[:, 2].max() == pytest.approx((106 + 6 / 12 - 100) * FT, abs=1e-4)
         assert v[:, 2].min() == pytest.approx(-(1 + 8 / 12) * FT, abs=1e-4)  # from the music room floor
 
 
@@ -213,3 +220,61 @@ def test_compare_elevation_lays_the_drawing_over_a_render(fits, tmp_path):
     img = cv2.imread(str(tmp_path / "c.jpg"))
     assert img.shape[1] == 1200 and img.shape[0] == 3 * (480 + 44)
     assert 0.0 < res["drawing_ink_inside_model"] < 1.0
+
+
+# ---- round 3: trellis, lantern, rings, eaves ---------------------------------------
+
+
+@pytest.mark.parametrize("pav, n_cols, n_sides", [("pav_tl", 4, 3), ("pav_tr", 4, 3), ("pav_center", 4, 3), ("pav_br", 4, 3)])
+def test_trellis_on_the_glazed_sides(house, pav, n_cols, n_sides):
+    brackets = [p for p in _placements(house, pav) if ".trellis.bracket." in p["id"]]
+    slats = [p for p in _placements(house, pav) if ".trellis.slats." in p["id"]]
+    assert (len(brackets), len(slats)) == (n_cols, n_sides)
+    centre = np.array(house["points"][pav])
+    header_bottom = (107 + 1.5 / 12 - 100) * FT - 6 * IN
+    for b in brackets:
+        v = _world_verts(house, b)
+        assert v[:, 2].min() == pytest.approx(header_bottom, abs=1e-4)
+        assert v[:, 2].max() == pytest.approx(header_bottom + 4 * IN, abs=1e-4)
+        vid = b["id"].rsplit(".v", 1)[1]
+        col = np.array(house["points"][f"{pav}.v{vid}"])
+        reach = np.hypot(*(v[:, :2] - col).T).max()
+        assert reach == pytest.approx((3 + 4 / 12) * FT, abs=0.03)  # to the outside of the bracket
+        assert np.hypot(*(v[:, :2].mean(axis=0) - centre)) > np.hypot(*(col - centre))  # outward
+    v = _world_verts(house, slats[0])
+    assert v[:, 2].min() == pytest.approx(header_bottom + 4 * IN, abs=1e-4)  # on top of the brackets
+    assert house["derived"][pav]["trellis_slats_per_side"] == 3
+
+
+def test_living_room_lantern(house):
+    parts = [p for p in _placements(house, "pav_living") if ".lantern." in p["id"]]
+    kinds = {p["id"].split(".lantern.")[1].split(".")[0] for p in parts}
+    assert kinds == {"post", "header", "glass", "roof"}
+    assert sum(1 for p in parts if ".lantern.roof." in p["id"]) == 4
+    hdr = next(p for p in parts if ".lantern.header." in p["id"])
+    assert _world_verts(house, hdr)[:, 2].max() == pytest.approx((109 + 8 / 12 - 100) * FT, abs=1e-4)
+    roof = next(p for p in parts if ".lantern.roof." in p["id"])
+    assert _world_verts(house, roof)[:, 2].max() == pytest.approx((111 + 10.75 / 12 - 100) * FT, abs=0.06)  # meets the ring (plus the glass)
+
+
+def test_rings_are_steel_bands_standing_above_the_roofing(house):
+    comps = {c["name"]: c for c in house["components"]}
+    for pav in ("pav_tl", "pav_tr", "pav_center", "pav_br", "pav_living"):
+        ring = next(p for p in _placements(house, pav) if p["id"].endswith(".ring"))
+        dome = next(p for p in _placements(house, pav) if p["id"].endswith(".skylight"))
+        assert comps[ring["component"]]["material_slots"] == ["M_SteelPainted"]
+        band_top = _world_verts(house, ring)[:, 2].max()
+        assert _world_verts(house, dome)[:, 2].min() == pytest.approx(band_top, abs=1e-4)
+        cone = next(p for p in _placements(house, pav) if p["id"].endswith(".roof_conical"))
+        assert band_top - _world_verts(house, cone)[:, 2].max() == pytest.approx(5 * IN, abs=0.01)
+
+
+def test_eaves_cover_the_rafter_tails_and_close_the_wall_top(house):
+    for pav in ("pav_tl", "pav_tr", "pav_center", "pav_br", "pav_living"):
+        fascia = next(p for p in _placements(house, pav) if p["id"].endswith(".fascia"))
+        frieze = next(p for p in _placements(house, pav) if p["id"].endswith(".frieze"))
+        tails = [p for p in _placements(house, pav) if ".rafter.cone." in p["id"]]
+        lowest_tail = min(_world_verts(house, t)[:, 2].min() for t in tails)
+        assert _world_verts(house, fascia)[:, 2].min() <= lowest_tail + 1e-3
+        fv = _world_verts(house, frieze)
+        assert fv[:, 2].min() == pytest.approx((105 + 8 / 12 - 100) * FT, abs=1e-4)  # from the top of masonry

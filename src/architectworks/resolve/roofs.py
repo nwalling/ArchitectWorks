@@ -22,7 +22,7 @@ from architectworks.resolve.elements import _material, _z
 from architectworks.resolve.floors import extrude
 from architectworks.resolve.model import Model, Placement, src_dict
 from architectworks.resolve.pavilion import Z, camel
-from architectworks.spec.model import BuildingSpec, FlatRoof, ShedSkylight
+from architectworks.spec.model import BuildingSpec, FlatRoof, FlatRoofSkylight
 from architectworks.units import to_metres
 
 MIN_PART_M2 = 0.05
@@ -104,37 +104,68 @@ def expand_flat_roof(spec: BuildingSpec, el: FlatRoof, model: Model) -> None:
         _skylight(spec, el, sk, k, z_top, model)
 
 
-def _skylight(spec: BuildingSpec, el: FlatRoof, sk: ShedSkylight, k: int, z_roof: float, model: Model) -> None:
-    """Glass on the slope, a back panel, two triangular ends and a ridge
-    beam, in a local frame: x along the length, y from the low edge to the
-    high edge, z up from the roof."""
+def ridge_beam(x0: float, x1: float, z: float, width: float, depth: float, over: float, lift: float, steps: int = 8) -> g.Mesh:
+    """A beam along x from x0 - over to x1 + over, its underside at height z,
+    straight between x0 and x1 and curving up by ``lift`` toward each tip."""
+    xs = [x0 - over * (1 - i / steps) for i in range(steps)] + [x0 + (x1 - x0) * i / 4 for i in range(5)] + [x1 + over * (i + 1) / steps for i in range(steps)]
+
+    def centre(x: float) -> tuple[float, float]:
+        if over <= 0 or x0 <= x <= x1:
+            return z + depth / 2, 0.0
+        s = (x0 - x) / over if x < x0 else (x - x1) / over
+        slope = 2 * lift * s / over * (-1 if x < x0 else 1)
+        return z + depth / 2 + lift * s * s, slope
+
+    sections = []
+    for x in xs:
+        zc, dz = centre(x)
+        t = math.hypot(1.0, dz)
+        nx, nz = -dz / t, 1.0 / t  # up, square to the beam
+        sections.append([(x + a * nx * depth / 2, b * width / 2, zc + a * nz * depth / 2) for a, b in ((-1, -1), (1, -1), (1, 1), (-1, 1))])
+    return g.loft(sections)
+
+
+def _skylight(spec: BuildingSpec, el: FlatRoof, sk: FlatRoofSkylight, k: int, z_roof: float, model: Model) -> None:
+    """Built in a local frame: x along the ridge, y across it, z up from the
+    roof; then turned and moved onto the roof."""
     prefix = f"SM_{spec.building.code}"
-    L, D, R = to_metres(sk.length), to_metres(sk.depth), to_metres(sk.rise)
+    L, W, R = to_metres(sk.length), to_metres(sk.width), to_metres(sk.rise)
     glass_t = spec.types.components[sk.type]
     frame_t = spec.types.components[sk.frame]
     th = to_metres(glass_t.thickness)
     fw, fd = (to_metres(v) for v in frame_t.section)
-    over = to_metres(sk.beam_overhang)
-    slope = math.atan2(R, D)
-    # glass: a plate on the sloped plane, between the ends
-    n = (0.0, -math.sin(slope), math.cos(slope))
-    glass = g.plate([(fw, 0.0, 0.0), (L - fw, 0.0, 0.0), (L - fw, D, R), (fw, D, R)], th, up=n)
-    # ends: triangles in the y-z plane, one frame width thick
-    tri = [(0.0, 0.0), (D, 0.0), (D, R)]
+    over, lift = to_metres(sk.beam_overhang), to_metres(sk.beam_lift)
+    if sk.form == "gable":
+        h = W / 2
+        slope = math.atan2(R, h)
+        up_s, up_n = (0.0, -math.sin(slope), math.cos(slope)), (0.0, math.sin(slope), math.cos(slope))
+        glass = g.merge([
+            g.plate([(fw, -h, 0.0), (L - fw, -h, 0.0), (L - fw, 0.0, R), (fw, 0.0, R)], th, up=up_s),
+            g.plate([(fw, 0.0, R), (L - fw, 0.0, R), (L - fw, h, 0.0), (fw, h, 0.0)], th, up=up_n),
+        ])
+        tri = [(-h, 0.0), (h, 0.0), (0.0, R)]
+        ridge_y = 0.0
+        parts = []
+    else:
+        slope = math.atan2(R, W)
+        glass = g.plate([(fw, 0.0, 0.0), (L - fw, 0.0, 0.0), (L - fw, W, R), (fw, W, R)], th, up=(0.0, -math.sin(slope), math.cos(slope)))
+        tri = [(0.0, 0.0), (W, 0.0), (W, R)]
+        ridge_y = W
+        parts = [g.box(fw, L - fw, W - fw, W, 0.0, R)]  # the back
     end = g.prism(tri, 0.0, fw).transformed(lambda v: (v[2], v[0], v[1]))
-    ends = g.merge([end, end.transformed(lambda v: (v[0] + L - fw, v[1], v[2]))])
-    back = g.box(fw, L - fw, D - fw, D, 0.0, R)
-    beam = g.box(-over, L + over, D - fw, D, R, R + fd)
+    parts += [end, end.transformed(lambda v: (v[0] + L - fw, v[1], v[2]))]
+    parts.append(ridge_beam(0.0, L, R, fw, fd, over, lift).transformed(lambda v: (v[0], v[1] + ridge_y, v[2])))
     centre_x, centre_y = to_metres(sk.center[0]), to_metres(sk.center[1])
-    a = math.radians(sk.rises_toward)
-    ydir = (math.cos(a), math.sin(a), 0.0)
-    xdir = (math.sin(a), -math.cos(a), 0.0)
-    origin = (centre_x - xdir[0] * L / 2 - ydir[0] * D / 2, centre_y - xdir[1] * L / 2 - ydir[1] * D / 2, z_roof)
+    a = math.radians(sk.axis)
+    xdir = (math.cos(a), math.sin(a), 0.0)
+    ydir = (-math.sin(a), math.cos(a), 0.0)
+    off_y = 0.0 if sk.form == "gable" else W / 2
+    origin = (centre_x - xdir[0] * L / 2 - ydir[0] * off_y, centre_y - xdir[1] * L / 2 - ydir[1] * off_y, z_roof)
     m = frame(origin, xdir, ydir, Z)
     src = src_dict(sk.src or el.src)
     gm, gn = _material(spec, sk.type)
     fm, fn = _material(spec, sk.frame)
     base = f"{prefix}_{camel(el.id)}_Skylight{k}"
-    for part, mesh, mat, nan, cat in (("glass", glass, gm, gn, "Roof"), ("frame", g.merge([ends, back, beam]), fm, fn, "Roof")):
-        name = model.unique(f"{base}{camel(part)}", cat, mesh, mat, [], nan, src)
-        model.place(Placement(f"{el.id}.skylight{k}.{part}", name, cat, m, el.id, (sk.src or el.src).basis, (sk.src or el.src).confidence, src))
+    for part, mesh, mat, nan in (("glass", glass, gm, gn), ("frame", g.merge(parts), fm, fn)):
+        name = model.unique(f"{base}{camel(part)}", "Roof", mesh, mat, [], nan, src)
+        model.place(Placement(f"{el.id}.skylight{k}.{part}", name, "Roof", m, el.id, (sk.src or el.src).basis, (sk.src or el.src).confidence, src))
