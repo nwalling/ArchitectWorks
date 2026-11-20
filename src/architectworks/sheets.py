@@ -98,7 +98,7 @@ def plan_outlines(resolved: dict[str, Any], categories=("Envelope", "Structure")
             if all(abs(v[2] - zmin) < 1e-4 for v in pts):
                 faces.append([(v[0], v[1]) for v in pts])
         if faces:
-            out.append({"id": p["id"], "component": c["name"], "kind": "column" if "Column" in c["name"] else ("glass" if "Glass" in c["name"] else "wall"), "faces": faces})
+            out.append({"id": p["id"], "component": c["name"], "kind": "column" if "Column" in c["name"] else ("glass" if "Glass" in c["name"] or c["name"].endswith("_Frame") else "wall"), "faces": faces})
     return out
 
 

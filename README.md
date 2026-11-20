@@ -6,7 +6,7 @@ It works the way a careful person would: read the drawings into a plain-text des
 
 ![The example house, built from the hand-written spec](docs/images/house.jpg)
 
-*The example house, generated from [`house.yaml`](projects/example-house/house.yaml) and rendered headless in Blender 5.2, from the stone side: six pavilions, a stair tower, the music room, two round cores with their flues, the flat roofs, trellises and glazed links between them. 90 unique meshes, 296 placements.*
+*The example house, generated from [`house.yaml`](projects/example-house/house.yaml) and rendered headless in Blender 5.2, from the stone side: six pavilions, a stair tower, the music room, two round cores with their flues, the flat roofs, trellises and glazed links between them. 101 unique meshes, 328 placements.*
 
 ## Phase 2 status: reading the sheets
 
@@ -120,6 +120,10 @@ A second pass, after review against the drawings, added:
 | A fascia over the rafter tails, and D-3's trim from the top of masonry up to the roof | D-3: "1"x10" WD. TRIM EA SIDE OF PL." |
 | Shingle courses on the conical roofs in the previews | "ROOFING ON 30° SLOPES TO BE COMPOSITION TAB LOCK SHINGLES" |
 | Flat roof top 107'-2" and 8" thick | D-3: 5'-8" of masonry, 10" of sill and beam, 8" of roof |
+| Glass facets meet the round steel ring along a level line, not in scallops | The elevations draw the ring's lower edge level |
+| Continuous blocking from the top of header up to the glass roof | D-1: "CONT. BLK. CUT FROM 2x4" |
+| Every glazed bay is a framed sliding pair: two sashes on two tracks with meeting stiles; the glazed links get framed fixed panes | Elevations: "TEMP. GLASS SLIDING DOOR"; D-1: "GLASS SLIDING DOOR FRAME" (frame sizes assumed) |
+| One long beam at 109'-8" under the living room's lantern roof, running 6'-2" north of its center | SW elevation |
 
 What the comparison still shows: the model's music room sits about 2'-0" further south than the southwest elevation draws it; the living room's east side is drawn with a glazed gable the model does not have; the living room's cone still stops at the edge of its stone arc, so its underside shows beside the lantern; the slats are lettered "2'-0" O.C." but drawn about 1'-0" apart, and the model follows the drawing; the flat roofs' 1/4" per foot drainage taper is not modelled.
 

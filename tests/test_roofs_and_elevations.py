@@ -278,3 +278,58 @@ def test_eaves_cover_the_rafter_tails_and_close_the_wall_top(house):
         assert _world_verts(house, fascia)[:, 2].min() <= lowest_tail + 1e-3
         fv = _world_verts(house, frieze)
         assert fv[:, 2].min() == pytest.approx((105 + 8 / 12 - 100) * FT, abs=1e-4)  # from the top of masonry
+
+
+# ---- round 4: doors, blocking, the ring junction, the lantern beam ----------------
+
+
+def test_glazed_sides_are_framed_sliding_pairs(house):
+    comps = {c["name"]: c for c in house["components"]}
+    for pav, n in (("pav_tl", 3), ("pav_tr", 3), ("pav_center", 3), ("pav_br", 3), ("pav_living", 3)):
+        doors = [p for p in _placements(house, pav) if ".door.s" in p["id"]]
+        frames = [p for p in _placements(house, pav) if ".door_frame.s" in p["id"]]
+        assert len(doors) == len(frames) == n
+        glass = comps[doors[0]["component"]]["mesh"]
+        # two sashes: two panes on tracks either side of the glazing line
+        assert len(glass["faces"]) == 12
+        ys = sorted({round(v[1], 4) for v in glass["verts"]})
+        assert ys[0] < 0 < ys[-1]
+        assert comps[frames[0]["component"]]["material_slots"] == ["M_DoorFrame"]
+
+
+def test_blocking_closes_the_gap_between_header_and_glass(house):
+    header_top = (107 + 1.5 / 12 - 100) * FT
+    for pav in ("pav_tl", "pav_tr", "pav_center", "pav_br"):
+        blocks = [p for p in _placements(house, pav) if ".blocking.s" in p["id"]]
+        assert len(blocks) == 3
+        v = _world_verts(house, blocks[0])
+        assert v[:, 2].min() == pytest.approx(header_top, abs=1e-4)
+        glass = next(p for p in _placements(house, pav) if ".roof_glass.s" in p["id"])
+        assert v[:, 2].max() == pytest.approx(_world_verts(house, glass)[:, 2].min(), abs=1e-3)  # up to the glass
+
+
+@pytest.mark.parametrize("pav", ["pav_tl", "pav_tr", "pav_center", "pav_br", "pav_living"])
+def test_glass_meets_the_ring_along_a_level_line(house, pav):
+    """Every point where a glass facet reaches the ring is at the top of the
+    ring, so the roof meets the round ring level all the way round."""
+    ring = next(p for p in _placements(house, pav) if p["id"].endswith(".ring"))
+    rv = _world_verts(house, ring)
+    centre = rv[:, :2].mean(axis=0)
+    r_out = np.hypot(*(rv[:, :2] - centre).T).max()
+    facets = [p for p in _placements(house, pav) if ".roof_glass.s" in p["id"] or ".lantern.roof." in p["id"]]
+    assert facets
+    for f in facets:
+        v = _world_verts(house, f)
+        at_ring = v[np.isclose(np.hypot(*(v[:, :2] - centre).T), r_out, atol=1e-3)]
+        assert len(at_ring) >= 9
+        lows = at_ring[:, 2]
+        assert np.ptp(np.round(lows, 4)) <= 0.0254 + 1e-3  # bottom and top of the glass only
+
+
+def test_living_room_lantern_sits_on_one_long_beam(house):
+    (beam,) = _placements(house, "living_lantern_beam")
+    v = _world_verts(house, beam)
+    assert v[:, 2].max() == pytest.approx((109 + 8 / 12 - 100) * FT, abs=1e-4)
+    assert np.ptp(v[:, 1]) == pytest.approx((23 + 5.5 / 12 - 14 - 10 / 12) * FT, abs=0.01)
+    headers = [p["id"] for p in _placements(house, "pav_living") if ".lantern.header." in p["id"]]
+    assert "pav_living.lantern.header.s5" not in headers and len(headers) == 3

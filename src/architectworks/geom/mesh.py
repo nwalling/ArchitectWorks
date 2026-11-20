@@ -329,6 +329,57 @@ def cylinder(radius: float, z0: float, z1: float, segments: int = 24, mat: int =
     return prism(poly, z0, z1, mat)
 
 
+def glazing_unit(length: float, height: float, frame_w: float, frame_d: float, glass_t: float, panels: int = 2) -> tuple[Mesh, Mesh]:
+    """A framed glazing unit in its own frame: x along the opening (0 to
+    length), y across it (the glazing line at 0), z up (0 to height).
+    Returns (frame, glass). Two panels are a sliding pair: two sashes on
+    tracks either side of the glazing line, overlapping by an inch at the
+    meeting stiles. One panel is a fixed pane in the outer frame."""
+    fw, fd = frame_w, frame_d
+    frame = [
+        box(0.0, fw, -fd / 2, fd / 2, 0.0, height),
+        box(length - fw, length, -fd / 2, fd / 2, 0.0, height),
+        box(fw, length - fw, -fd / 2, fd / 2, height - fw, height),
+        box(fw, length - fw, -fd / 2, fd / 2, 0.0, fw),
+    ]
+    glass = []
+    if panels == 1:
+        glass.append(box(fw, length - fw, -glass_t / 2, glass_t / 2, fw, height - fw))
+    else:
+        inch = 0.0254
+        open_w = length - 2 * fw
+        sash_w = open_w / 2 + inch / 2
+        sd = min(fd / 2, 1.75 * inch)
+        stile, top_rail, bottom_rail = 2.5 * inch, 2.5 * inch, 4.0 * inch
+        z0, z1 = fw, height - fw
+        for x0, y in ((fw, -fd / 4), (length - fw - sash_w, fd / 4)):
+            x1 = x0 + sash_w
+            y0, y1 = y - sd / 2, y + sd / 2
+            frame += [
+                box(x0, x0 + stile, y0, y1, z0, z1),
+                box(x1 - stile, x1, y0, y1, z0, z1),
+                box(x0 + stile, x1 - stile, y0, y1, z1 - top_rail, z1),
+                box(x0 + stile, x1 - stile, y0, y1, z0, z0 + bottom_rail),
+            ]
+            t = min(glass_t, sd * 0.6)
+            glass.append(box(x0 + stile, x1 - stile, y - t / 2, y + t / 2, z0 + bottom_rail, z1 - top_rail))
+    return merge(frame), merge(glass)
+
+
+def planar_faces(mesh: Mesh, tol: float = 1e-7) -> Mesh:
+    """Split every face that is not flat into a fan of triangles."""
+    faces, mats = [], []
+    for f, m in zip(mesh.faces, mesh.face_mat or [0] * len(mesh.faces)):
+        if len(f) > 3 and not is_planar(Mesh([mesh.verts[i] for i in f], [tuple(range(len(f)))]), tol):
+            for i in range(1, len(f) - 1):
+                faces.append((f[0], f[i], f[i + 1]))
+                mats.append(m)
+        else:
+            faces.append(tuple(f))
+            mats.append(m)
+    return Mesh(list(mesh.verts), faces, mats)
+
+
 def merge(meshes: Iterable[Mesh]) -> Mesh:
     out = Mesh()
     for m in meshes:

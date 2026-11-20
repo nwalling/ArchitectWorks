@@ -33,8 +33,8 @@ def test_every_element_resolves(house):
     elements = Counter(p["element"] for p in house["placements"])
     for eid in ("pav_tl", "pav_tr", "pav_center", "pav_br", "pav_living", "hearth", "music", "tower_stair", "core_n", "core_s", "floors"):
         assert elements[eid] > 0, eid
-    # five glazed links (pane and header each) and two stone ones
-    assert sum(1 for p in house["placements"] if p["element"].startswith("link_")) == 12
+    # five glazed links (glass, frame and header each) and two stone ones
+    assert sum(1 for p in house["placements"] if p["element"].startswith("link_")) == 17
     for eid in ("flue_n", "flue_s", "roof_hall_n", "roof_hall_nw", "roof_hall_s"):
         assert elements[eid] > 0, eid
 

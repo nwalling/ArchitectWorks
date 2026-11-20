@@ -10,7 +10,7 @@ from architectworks.geom import mesh as g
 from architectworks.geom.xform import frame, rotation_z, matmul, translation
 from architectworks.resolve.checks import run_spec_checks
 from architectworks.resolve.model import CATEGORIES, Model, Placement
-from architectworks.resolve.elements import expand_flue, expand_link, expand_round_mass, expand_stone_ring
+from architectworks.resolve.elements import expand_flue, expand_link, expand_member, expand_round_mass, expand_stone_ring
 from architectworks.resolve.floors import build_floors
 from architectworks.resolve.pavilion import expand_pavilion
 from architectworks.resolve.roofs import expand_flat_roof
@@ -30,10 +30,11 @@ EXPANDERS = {
     "link": expand_link,
     "flue": expand_flue,
     "flat_roof": expand_flat_roof,
+    "member": expand_member,
 }
 # Links refer to points other elements define; flat roofs are trimmed by
 # every roof placed before them. Both go last, flat roofs after links.
-ORDER = {"link": 1, "flat_roof": 2}
+ORDER = {"link": 1, "member": 1, "flat_roof": 2}
 
 
 def marker_mesh() -> tuple[g.Mesh, list[g.Mesh]]:

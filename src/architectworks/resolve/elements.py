@@ -10,7 +10,7 @@ from architectworks.geom import mesh as g
 from architectworks.geom.xform import frame, matmul, rotation_z, translation
 from architectworks.resolve.model import Check, Footprint, Model, Placement, src_dict
 from architectworks.resolve.pavilion import INCH, Z, camel, fmt_m, member_frame, norm_span, segments_for
-from architectworks.spec.model import BuildingSpec, Flue, Link, RoundMass, StoneRing
+from architectworks.spec.model import BuildingSpec, Flue, Link, Member, RoundMass, StoneRing
 from architectworks.units import to_metres
 
 
@@ -122,9 +122,19 @@ def expand_link(spec: BuildingSpec, el: Link, model: Model) -> None:
         w_h, d_h = (to_metres(v) for v in hdr.section)
         z_h = _z(spec, el.header.top) - z_f
         th = to_metres(t.thickness)
-        pane = g.box(0.0, length - 2 * inset, -th / 2, th / 2, 0.0, z_h - d_h)
-        pane_name = model.shared(prefix, camel(el.type), "Envelope", pane, mat, [pane] if t.collision else [], nanite, src_dict(t.src, type=el.type))
         origin = (x0 + d[0] * inset, y0 + d[1] * inset, z_f)
+        if el.frame is not None:
+            fr_t = spec.types.components[el.frame]
+            fw, fd = (to_metres(v) for v in fr_t.section)
+            frame_mesh, pane = g.glazing_unit(length - 2 * inset, z_h - d_h, fw, fd, th, el.panels)
+            hull = g.box(0.0, length - 2 * inset, -fd / 2, fd / 2, 0.0, z_h - d_h)
+            f_mat, f_nan = _material(spec, el.frame)
+            frame_name = model.unique(f"{prefix}_{camel(el.id)}_Frame", "Envelope", frame_mesh, f_mat, [hull] if t.collision else [], f_nan, src_dict(fr_t.src, type=el.frame))
+            model.place(Placement(f"{el.id}.frame", frame_name, "Envelope", frame(origin, d, y_axis, Z), el.id, el.src.basis, el.src.confidence, src))
+            pane_name = model.unique(f"{prefix}_{camel(el.id)}_Glass", "Envelope", pane, mat, [], nanite, src_dict(t.src, type=el.type))
+        else:
+            pane = g.box(0.0, length - 2 * inset, -th / 2, th / 2, 0.0, z_h - d_h)
+            pane_name = model.shared(prefix, camel(el.type), "Envelope", pane, mat, [pane] if t.collision else [], nanite, src_dict(t.src, type=el.type))
         model.place(Placement(f"{el.id}.pane", pane_name, "Envelope", frame(origin, d, y_axis, Z), el.id, el.src.basis, el.src.confidence, src))
         hdr_mesh = g.box(0.0, length, -w_h / 2, w_h / 2, -d_h, 0.0)
         h_mat, h_nan = _material(spec, el.header.type)
@@ -148,3 +158,26 @@ def expand_link(spec: BuildingSpec, el: Link, model: Model) -> None:
                 values={"geometry": fmt_m(length), "lettered": fmt_m(want), "difference_in": round(diff / INCH, 3)},
             )
         )
+
+
+def expand_member(spec: BuildingSpec, el: Member, model: Model) -> None:
+    """A straight beam between two plan points, its top at a level."""
+    prefix = f"SM_{spec.building.code}"
+
+    def point(ref):
+        if isinstance(ref, str):
+            if ref not in model.points:
+                raise ValueError(f"{el.id}: unknown point {ref!r}")
+            return model.points[ref]
+        return to_metres(ref[0]), to_metres(ref[1])
+
+    (x0, y0), (x1, y1) = point(el.start), point(el.end)
+    z = _z(spec, el.top)
+    t = spec.types.components[el.type]
+    w, dpt = (to_metres(v) for v in t.section)
+    local, length = member_frame((x0, y0, z), (x1, y1, z))
+    mesh = g.box(0.0, length, -w / 2, w / 2, -dpt, 0.0)
+    mat, nanite = _material(spec, el.type)
+    src = src_dict(el.src, type=el.type)
+    name = model.unique(f"{prefix}_{camel(el.id)}", "Structure", mesh, mat, [mesh] if t.collision else [], nanite, src)
+    model.place(Placement(f"{el.id}.member", name, "Structure", local, el.id, el.src.basis, el.src.confidence, src))

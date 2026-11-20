@@ -106,6 +106,7 @@ types:
     redwood: {unreal: M_Redwood, color: "#8b4a32"}
     glass: {unreal: M_Glass, color: "#9fc3cf", translucent: true, opacity: 0.25}
     steel: {unreal: M_SteelPainted, color: "#45484b"}
+    door_frame_metal: {unreal: M_DoorFrame, color: "#3d3933"}
     shingle: {unreal: M_ShingleComposition, color: "#4d4a47", pattern: shingles}
     acrylic: {unreal: M_Acrylic, color: "#dcecf1", translucent: true, opacity: 0.22}
 
@@ -208,6 +209,18 @@ types:
       material: redwood
       collision: false
       src: {sheet: D-3, basis: dimensioned, quote: "1\"x10\" WD. TRIM EA SIDE OF PL.", note: closes the space between the top of masonry and the roof}
+    door_frame:
+      kind: beam
+      section: [2", 4"]
+      material: door_frame_metal
+      collision: false
+      src: {sheet: D-1, basis: assumed, quote: "GLASS SLIDING DOOR FRAME", note: "frame and sash sizes assumed (2\" x 4\" frame, 2 1/2\" stiles, 4\" bottom rail); dark bronze assumed"}
+    blocking_2x4:
+      kind: beam
+      section: [2", 4"]
+      material: redwood
+      collision: false
+      src: {sheet: D-1, basis: dimensioned, quote: "CONT. BLK. CUT FROM 2x4", note: fills from the top of header up to the glass between the rafters}
     trellis_bracket:
       kind: beam
       section: [4", 4"]
@@ -267,9 +280,11 @@ elements:
       src: {sheet: foundation, basis: dimensioned, quote: "8'-10\" TYP. BET. COL. C.P.'S", note: rotation read from the column positions on the calibrated plan}
     glazed_sides: [0, 1, 2]
     columns: {type: column_typ}
-    header: {type: header_6x6, top: t_o_header}
+    header: {type: header_6x6, top: t_o_header, blocking: blocking_2x4}
     doors:
       type: door_glass
+      frame: door_frame
+      panels: 2
       src: {sheet: elevations, basis: measured, confidence: low, quote: "TEMP. GLASS SLIDING DOOR"}
     stone_arcs:
       - type: wall_stone
@@ -324,9 +339,11 @@ elements:
       src: {sheet: foundation, basis: dimensioned, quote: "8'-10\" TYP. BET. COL. C.P.'S", note: rotation read from the column positions on the calibrated plan}
     glazed_sides: [5, 0, 1]
     columns: {type: column_typ}
-    header: {type: header_6x6, top: t_o_header}
+    header: {type: header_6x6, top: t_o_header, blocking: blocking_2x4}
     doors:
       type: door_glass
+      frame: door_frame
+      panels: 2
       src: {sheet: elevations, basis: measured, confidence: low, quote: "TEMP. GLASS SLIDING DOOR"}
     stone_arcs:
       - type: wall_stone
@@ -380,9 +397,11 @@ elements:
       src: {sheet: foundation, basis: dimensioned, quote: "6'-10\" TYP. BET. COL. C.P.'S", note: rotation read from the column positions on the calibrated plan}
     glazed_sides: [5, 0, 1]
     columns: {type: column_typ}
-    header: {type: header_6x6, top: t_o_header}
+    header: {type: header_6x6, top: t_o_header, blocking: blocking_2x4}
     doors:
       type: door_glass
+      frame: door_frame
+      panels: 2
       src: {sheet: elevations, basis: measured, confidence: low, quote: "TEMP. GLASS SLIDING DOOR"}
     stone_arcs:
       - type: wall_stone
@@ -436,9 +455,11 @@ elements:
       src: {sheet: foundation, basis: dimensioned, quote: "6'-10\" TYP. BET. COL. C.P.'S", note: rotation read from the column positions on the calibrated plan}
     glazed_sides: [5, 0, 1]
     columns: {type: column_typ}
-    header: {type: header_6x6, top: t_o_header}
+    header: {type: header_6x6, top: t_o_header, blocking: blocking_2x4}
     doors:
       type: door_glass
+      frame: door_frame
+      panels: 2
       src: {sheet: elevations, basis: measured, confidence: low, quote: "TEMP. GLASS SLIDING DOOR"}
     stone_arcs:
       - type: wall_stone
@@ -495,6 +516,8 @@ elements:
     header: {type: header_6x6, top: t_o_header}
     doors:
       type: door_glass
+      frame: door_frame
+      panels: 2
       src: {sheet: foundation, basis: measured, confidence: low, note: double lines between the hearth columns read as glazing}
     stone_arcs:
       - type: wall_stone
@@ -533,9 +556,20 @@ elements:
         panel: glass_fixed
         roof_panel: roof_glass
         header: header_6x6
+        skip_headers: [5]
         post: lantern_post
         src: {sheet: elevations, basis: measured, confidence: low, quote: "FIXED GL.",
               note: "the SW elevation draws fixed glass between posts above the living room's header, a beam at 109'-8\", and glass facets up to the ring; on the sides the cone does not cover"}
+  - id: living_lantern_beam
+    pattern: member
+    name: Long beam under the living room's lantern roof
+    floor: ff_bedroom
+    start: [3'-5 9/16", -23'-5 1/2"]
+    end: [3'-5 9/16", -14'-10"]
+    top: t_o_lantern_living
+    type: header_6x6
+    src: {sheet: elevations, basis: measured, confidence: low,
+          note: "the SW elevation draws one beam at 109'-8\" from 2'-5\" south of the living room's center to 6'-2\" north of it, past the lantern; taken on the line of the lantern's east side (the elevation cannot say how far east it is)"}
   - id: hearth
     pattern: stone_ring
     name: Hearth
@@ -680,6 +714,7 @@ elements:
     end: pav_tr.v2
     floor: ff_bedroom
     type: door_glass
+    frame: door_frame
     header: {type: header_6x6, top: t_o_header}
     lettered: 5'-0"
     src: {sheet: foundation, basis: rule, confidence: medium, note: glazing drawn between these two points}
@@ -690,6 +725,7 @@ elements:
     end: pav_br.v2
     floor: ff_bedroom
     type: door_glass
+    frame: door_frame
     header: {type: header_6x6, top: t_o_header}
     src: {sheet: foundation, basis: rule, confidence: medium, note: glazing drawn between these two points}
   - id: link_living_center
@@ -699,6 +735,7 @@ elements:
     end: pav_center.v2
     floor: ff_bedroom
     type: door_glass
+    frame: door_frame
     header: {type: header_6x6, top: t_o_header}
     src: {sheet: foundation, basis: rule, confidence: medium, note: glazing drawn between these two points}
   - id: link_tl_living
@@ -708,6 +745,7 @@ elements:
     end: pav_living.v1
     floor: ff_bedroom
     type: door_glass
+    frame: door_frame
     header: {type: header_6x6, top: t_o_header}
     src: {sheet: foundation, basis: rule, confidence: medium, note: glazing drawn between these two points}
   - id: link_stair_living
@@ -717,6 +755,7 @@ elements:
     end: pav_living.arc0.start
     floor: ff_bedroom
     type: door_glass
+    frame: door_frame
     header: {type: header_6x6, top: t_o_header}
     src: {sheet: foundation, basis: rule, confidence: medium, note: glazing drawn between these two points}
 

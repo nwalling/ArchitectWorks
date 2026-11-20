@@ -155,6 +155,16 @@ class TypeRef(Strict):
 
 class HeaderSpec(TypeRef):
     top: str = Field(description="level id of the top of header")
+    blocking: str | None = Field(None, description="beam type of the continuous blocking that fills from the top of header up to the glass roof")
+
+
+class DoorSpec(TypeRef):
+    """The glazing in each bay: ``type`` is the glass, ``frame`` the frame
+    members (face width and depth); two panels make a sliding pair on two
+    tracks, one is a fixed pane."""
+
+    frame: str | None = None
+    panels: Literal[1, 2] = 1
 
 
 class StoneArcSpec(TypeRef):
@@ -231,6 +241,7 @@ class LanternSpec(Strict):
     panel: str = Field(description="panel type for the fixed glass")
     roof_panel: str = Field(description="panel type for the glass facets")
     header: str = Field(description="beam type of the lantern's header")
+    skip_headers: list[int] = Field([], description="sides whose header is a longer member modelled on its own")
     post: str = Field(description="beam type of the posts, section across")
     src: Source
 
@@ -281,7 +292,7 @@ class RadialPavilion(Strict):
     glazed_sides: list[int] = []
     columns: TypeRef
     header: HeaderSpec
-    doors: TypeRef
+    doors: DoorSpec
     stone_arcs: list[StoneArcSpec] = []
     slab: SlabSpec
     roof: RoofSpec | None = None
@@ -349,6 +360,8 @@ class Link(Strict):
     top: str | None = Field(None, description="level id of the top of a masonry link")
     inset: Length = Fraction(6)
     lettered: Length | None = Field(None, description="length written on the sheet, for cross-checking")
+    frame: str | None = Field(None, description="glazed links: beam type of the frame round the glass")
+    panels: Literal[1, 2] = 1
     src: Source
 
 
@@ -394,6 +407,20 @@ class FlatRoof(Strict):
     src: Source
 
 
+class Member(Strict):
+    """A straight beam between two plan points, its top at a level."""
+
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    pattern: Literal["member"]
+    name: str | None = None
+    floor: str
+    start: PointRef
+    end: PointRef
+    top: str = Field(description="level id of the top of the member")
+    type: str = Field(description="a beam type")
+    src: Source
+
+
 class Flue(Strict):
     """A round flue pipe rising from a masonry mass to a ball cap."""
 
@@ -408,7 +435,7 @@ class Flue(Strict):
     src: Source
 
 
-Element = Annotated[RadialPavilion | StoneRing | RoundMass | Link | FlatRoof | Flue, Field(discriminator="pattern")]
+Element = Annotated[RadialPavilion | StoneRing | RoundMass | Link | FlatRoof | Flue | Member, Field(discriminator="pattern")]
 
 
 # ---- checks and open items --------------------------------------------------
@@ -506,9 +533,14 @@ class BuildingSpec(Strict):
                 if el.header:
                     type_ok(el.header.type, "beam", w)
                     level_ok(el.header.top, w)
+                type_ok(el.frame, "beam", w)
                 level_ok(el.top, w)
                 if el.kind == "masonry" and el.top is None:
                     errors.append(f"{w}: a masonry link needs a top level")
+                continue
+            if isinstance(el, Member):
+                type_ok(el.type, "beam", w)
+                level_ok(el.top, w)
                 continue
             if isinstance(el, FlatRoof):
                 type_ok(el.type, "roof", w)
@@ -538,6 +570,8 @@ class BuildingSpec(Strict):
             type_ok(el.columns.type, "column", w)
             type_ok(el.header.type, "beam", w)
             type_ok(el.doors.type, "panel", w)
+            type_ok(el.doors.frame, "beam", w)
+            type_ok(el.header.blocking, "beam", w)
             type_ok(el.slab.type, "slab", w)
             for a in el.stone_arcs:
                 type_ok(a.type, "wall", w)

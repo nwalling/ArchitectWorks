@@ -61,6 +61,19 @@ def member_frame(start: Vec3, end: Vec3) -> tuple[Matrix, float]:
     return frame(start, x, y, z), length
 
 
+def ring_facet(lower0: Vec3, lower1: Vec3, r_ring: float, a0: float, a1: float, z_top: float, thickness: float, steps: int = 8) -> Mesh:
+    """A roof facet from a straight lower edge up to an arc of the ring, the
+    arc level at ``z_top`` all the way round, so the facet meets the round
+    ring along a level line (a ruled surface, nearly flat)."""
+    sections = []
+    for i in range(steps + 1):
+        f = i / steps
+        lo = (lower0[0] + (lower1[0] - lower0[0]) * f, lower0[1] + (lower1[1] - lower0[1]) * f, lower0[2] + (lower1[2] - lower0[2]) * f)
+        up = g.polar(r_ring, a0 + (a1 - a0) * f, z_top)
+        sections.append([lo, up, (up[0], up[1], up[2] + thickness), (lo[0], lo[1], lo[2] + thickness)])
+    return g.planar_faces(g.loft(sections))
+
+
 def norm_span(start: float, end: float) -> tuple[float, float]:
     """(a0, a1) with 0 <= a0 < 360 and a0 < a1 <= a0 + 360."""
     a0 = start % 360.0
@@ -196,14 +209,27 @@ def _columns_headers_doors(c: Ctx, G: list[int], glazed_vertices: list[int]) -> 
     e = g.unit(g.sub(c.vertex(1), c.vertex(0)))
     inset = g.ray_exit(profile, (-e[1], e[0]))
     L_door = c.side - 2 * inset
-    door_mesh = g.box(0.0, L_door, -t_d / 2, t_d / 2, 0.0, H_col)
     mat, nanite = c.material(door_t)
-    door_name = model.shared(c.prefix, camel(el.doors.type), "Envelope", door_mesh, mat, [door_mesh] if door_t.collision else [], nanite, c.tsrc(el.doors.type))
+    if el.doors.frame is not None:
+        fr_t = c.ctype(el.doors.frame)
+        fw, fd = (to_metres(v) for v in fr_t.section)
+        frame_mesh, glass_mesh = g.glazing_unit(L_door, H_col, fw, fd, t_d, el.doors.panels)
+        door_name = model.shared(c.prefix, camel(el.doors.type) + ("Pair" if el.doors.panels == 2 else "Pane"), "Envelope", glass_mesh, mat, [], nanite, c.tsrc(el.doors.type))
+        f_mat, f_nan = c.material(fr_t)
+        hull = g.box(0.0, L_door, -fd / 2, fd / 2, 0.0, H_col)
+        frame_name = model.shared(c.prefix, camel(el.doors.type) + "Frame", "Envelope", frame_mesh, f_mat, [hull] if door_t.collision else [], f_nan, c.tsrc(el.doors.frame))
+    else:
+        door_mesh = g.box(0.0, L_door, -t_d / 2, t_d / 2, 0.0, H_col)
+        door_name = model.shared(c.prefix, camel(el.doors.type), "Envelope", door_mesh, mat, [door_mesh] if door_t.collision else [], nanite, c.tsrc(el.doors.type))
+        frame_name = None
     door_src = src_dict(el.doors.src) if el.doors.src else c.tsrc(el.doors.type)
     for k in G:
         p0, p1 = c.vertex(k), c.vertex(k + 1)
         d = g.unit(g.sub(p1, p0))
-        c.place(f"door.s{k % c.n}", door_name, frame(g.add(p0, g.scale(d, inset)), d, g.cross(Z, d), Z), door_src.get("basis", "measured"), door_src.get("confidence", "low"), door_src)
+        m = frame(g.add(p0, g.scale(d, inset)), d, g.cross(Z, d), Z)
+        c.place(f"door.s{k % c.n}", door_name, m, door_src.get("basis", "measured"), door_src.get("confidence", "low"), door_src)
+        if frame_name is not None:
+            c.place(f"door_frame.s{k % c.n}", frame_name, m, door_src.get("basis", "measured"), door_src.get("confidence", "low"), door_src)
     model.derived.setdefault(el.id, {}).update({"door_inset_from_column_cp": fmt_m(inset), "door_width": fmt_m(L_door)})
     return col_outer
 
@@ -383,17 +409,27 @@ def _roof(c: Ctx, G: list[int], glazed_vertices: list[int], rest: tuple[float, f
             return z_e + (c.apothem - g.dot((p[0], p[1], 0.0), u)) * math.tan(pitch)
 
         v0, v1 = c.vertex(0, z=z_e), c.vertex(1, z=z_e)
-        inner = []
-        for i in range(9):
-            p = g.polar(r_ring, c.step * (8 - i) / 8)
-            inner.append((p[0], p[1], facet_z(p)))
-        facet_mesh = g.plate([v0, v1] + inner, t_g)
-        facet_hull = g.plate([v0, v1, inner[0], inner[-1]], t_g)
+        # the glass meets the steel ring along a level line at the top of the ring
+        facet_mesh = ring_facet(v0, v1, r_ring, 0.0, c.step, z_rt, t_g)
+        c0, c1 = g.polar(r_ring, 0.0, z_rt), g.polar(r_ring, c.step, z_rt)
+        facet_hull = g.plate([v0, v1, c1, c0], t_g)
         mat, nanite = c.material(rg_t)
         facet_name = model.shared(c.prefix, camel(roof.glazed.panel), "Roof", facet_mesh, mat, [facet_hull] if rg_t.collision else [], nanite, c.tsrc(roof.glazed.panel))
         gl = roof.glazed.src
         for k in G:
             c.place(f"roof_glass.s{k % c.n}", facet_name, rotation_z(k * c.step), gl.basis, gl.confidence, src_dict(gl))
+        # continuous blocking from the top of header up to the glass (D-1)
+        if el.header.blocking is not None:
+            blk_t = c.ctype(el.header.blocking)
+            w_b = to_metres(blk_t.section[0])
+            z_h = c.level_z(el.header.top) - c.z_f
+            blk = g.box(0.0, c.side, -w_b / 2, w_b / 2, 0.0, z_e - z_h)
+            mat, nanite = c.material(blk_t)
+            blk_name = model.shared(c.prefix, camel(el.header.blocking), "Structure", blk, mat, [], nanite, c.tsrc(el.header.blocking))
+            for k in G:
+                p0, p1 = c.vertex(k, z=z_h), c.vertex(k + 1, z=z_h)
+                d = g.unit(g.sub(p1, p0))
+                c.place(f"blocking.s{k % c.n}", blk_name, frame(p0, d, g.cross(Z, d), Z), blk_t.src.basis, blk_t.src.confidence, c.tsrc(el.header.blocking))
 
     # ---- conical roof ----
     ranges = [rest] if roof.conical.span == "rest" else [(a0, a1) for _, a0, a1 in arcs]
@@ -478,7 +514,7 @@ def _roof(c: Ctx, G: list[int], glazed_vertices: list[int], rest: tuple[float, f
             for k in G:
                 mid = (k + 0.5) * c.step
                 t = g.polar(r_ring, mid)
-                rafter(f"rafter.mid.s{k % c.n}", g.polar(c.apothem, mid, z_e), (t[0], t[1], z_e + (c.apothem - r_ring) * math.tan(pitch)), raf_src.get("basis", "rule"))
+                rafter(f"rafter.mid.s{k % c.n}", g.polar(c.apothem, mid, z_e), (t[0], t[1], z_rt), raf_src.get("basis", "rule"))
     idx = 0
     for b0, b1 in ranges:
         count = int(round((b1 - b0) / roof.rafters.cone_spacing))
@@ -601,24 +637,19 @@ def _lantern(c: Ctx, r_ring: float, z_rt: float) -> None:
     pane = g.box(w_p / 2, c.side - w_p / 2, -th / 2, th / 2, z_h0, z_l - d_h)
     mat, nanite = c.material(pan_t)
     pane_name = model.shared(c.prefix, camel(lan.panel) + "Lantern", "Envelope", pane, mat, [pane] if pan_t.collision else [], nanite, c.tsrc(lan.panel))
+    skip = {k % c.n for k in lan.skip_headers}
     for k in sides:
-        local, _ = member_frame(c.vertex(k, z=z_l), c.vertex(k + 1, z=z_l))
-        c.place(f"lantern.header.s{k}", hdr_name, local, lan.src.basis, lan.src.confidence, src)
+        if k not in skip:
+            local, _ = member_frame(c.vertex(k, z=z_l), c.vertex(k + 1, z=z_l))
+            c.place(f"lantern.header.s{k}", hdr_name, local, lan.src.basis, lan.src.confidence, src)
         p0, p1 = c.vertex(k), c.vertex(k + 1)
         d = g.unit(g.sub(p1, p0))
         c.place(f"lantern.glass.s{k}", pane_name, frame(p0, d, g.cross(Z, d), Z), lan.src.basis, lan.src.confidence, src)
-    # glass facets: through the header's top edge, meeting the top of the ring
-    # at the facet's corners (the band covers the rest)
+    # glass facets from the header's top edge to a level line round the ring
     rf_t = c.ctype(lan.roof_panel)
     t_g = to_metres(rf_t.thickness)
-    tan_p = (z_rt - z_l) / (c.apothem - r_ring * math.cos(c.half))
-    u = g.polar(1.0, 0.5 * c.step)
-
-    def fz(p: Vec3) -> float:
-        return z_l + (c.apothem - g.dot((p[0], p[1], 0.0), u)) * tan_p
-
-    inner = [g.polar(r_ring, c.step * (8 - i) / 8) for i in range(9)]
-    facet = g.plate([c.vertex(0, z=z_l), c.vertex(1, z=z_l)] + [(p[0], p[1], fz(p)) for p in inner], t_g)
+    tan_p = (z_rt - z_l) / (c.apothem - r_ring)
+    facet = ring_facet(c.vertex(0, z=z_l), c.vertex(1, z=z_l), r_ring, 0.0, c.step, z_rt, t_g)
     mat, nanite = c.material(rf_t)
     facet_name = model.shared(c.prefix, camel(lan.roof_panel) + "Lantern", "Roof", facet, mat, [], nanite, c.tsrc(lan.roof_panel))
     for k in sides:
