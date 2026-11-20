@@ -9,7 +9,7 @@ every pavilion is compared, and every disagreement is listed.
 from __future__ import annotations
 
 import math
-from fractions import Fraction
+from pathlib import Path
 from typing import Any
 
 from architectworks.spec.model import BuildingSpec, RadialPavilion
@@ -24,8 +24,17 @@ def _xy(entry: dict[str, Any]) -> tuple[float, float]:
     return float(parse_length(entry["x"])), float(parse_length(entry["y"]))
 
 
-def score(draft: dict[str, Any], key: BuildingSpec) -> dict[str, Any]:
-    key_pts = {cid: (float(cp.at[0]), float(cp.at[1])) for cid, cp in key.control.items()}
+def sheet_for_image(key: BuildingSpec, image: str | Path) -> str | None:
+    """The key's sheet id for an image file, matched by file name."""
+    name = Path(image).name
+    return next((sid for sid, sh in key.sheets.items() if sh.file and Path(sh.file).name == name), None)
+
+
+def score(draft: dict[str, Any], key: BuildingSpec, sheet: str | None = None) -> dict[str, Any]:
+    """With ``sheet``, only the key's control points taken from that sheet
+    are scored: a reading of one sheet cannot know points another sheet
+    places."""
+    key_pts = {cid: (float(cp.at[0]), float(cp.at[1])) for cid, cp in key.control.items() if sheet is None or cp.src.sheet == sheet}
     draft_pts = {label: _xy(e) for label, e in draft["control"].items()}
 
     # translation: the shift most draft points agree on (votes within 3 in)

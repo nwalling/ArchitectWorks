@@ -70,8 +70,58 @@ def srgb_to_linear(c: float) -> float:
     return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
 
 
+def rubble(mat: bpy.types.Material, rgb: tuple[float, float, float]) -> None:
+    """Random rubble masonry for previews: stones about 0.35 m across from a
+    Voronoi pattern in world space, each a little different in tone, with
+    sunken mortar joints. Unreal gets only the material slot."""
+    nt = mat.node_tree
+    nodes, links = nt.nodes, nt.links
+    bsdf = nodes.get("Principled BSDF")
+    geo = nodes.new("ShaderNodeNewGeometry")
+    mapping = nodes.new("ShaderNodeMapping")
+    mapping.inputs["Scale"].default_value = (2.6, 2.6, 3.4)
+    links.new(geo.outputs["Position"], mapping.inputs["Vector"])
+    edge = nodes.new("ShaderNodeTexVoronoi")
+    edge.feature = "DISTANCE_TO_EDGE"
+    edge.inputs["Scale"].default_value = 1.0
+    links.new(mapping.outputs["Vector"], edge.inputs["Vector"])
+    cells = nodes.new("ShaderNodeTexVoronoi")
+    cells.inputs["Scale"].default_value = 1.0
+    links.new(mapping.outputs["Vector"], cells.inputs["Vector"])
+    joint = nodes.new("ShaderNodeMapRange")
+    joint.inputs["From Min"].default_value = 0.02
+    joint.inputs["From Max"].default_value = 0.07
+    links.new(edge.outputs["Distance"], joint.inputs["Value"])
+    # each stone a little lighter or darker than the spec colour, never another hue
+    grey = nodes.new("ShaderNodeRGBToBW")
+    links.new(cells.outputs["Color"], grey.inputs["Color"])
+    shade = nodes.new("ShaderNodeMapRange")
+    shade.inputs["To Min"].default_value = 0.72
+    shade.inputs["To Max"].default_value = 1.22
+    links.new(grey.outputs["Val"], shade.inputs["Value"])
+    tone = nodes.new("ShaderNodeMix")
+    tone.data_type = "RGBA"
+    tone.blend_type = "MULTIPLY"
+    tone.inputs["Factor"].default_value = 1.0
+    tone.inputs["A"].default_value = (*rgb, 1.0)
+    links.new(shade.outputs["Result"], tone.inputs["B"])
+    stone = nodes.new("ShaderNodeMix")
+    stone.data_type = "RGBA"
+    stone.inputs["A"].default_value = (0.32, 0.30, 0.27, 1.0)  # mortar
+    links.new(joint.outputs["Result"], stone.inputs["Factor"])
+    links.new(tone.outputs["Result"], stone.inputs["B"])
+    links.new(stone.outputs["Result"], bsdf.inputs["Base Color"])
+    bump = nodes.new("ShaderNodeBump")
+    bump.inputs["Strength"].default_value = 0.6
+    bump.inputs["Distance"].default_value = 0.02
+    links.new(joint.outputs["Result"], bump.inputs["Height"])
+    links.new(bump.outputs["Normal"], bsdf.inputs["Normal"])
+    bsdf.inputs["Roughness"].default_value = 0.9
+
+
 def make_materials(materials: dict) -> dict[str, bpy.types.Material]:
-    """Flat-colour placeholders. Spec colours are sRGB; Blender wants linear."""
+    """Flat-colour placeholders, or a procedural pattern where the spec names
+    one. Spec colours are sRGB; Blender wants linear."""
     out = {}
     for name, m in materials.items():
         mat = bpy.data.materials.new(name)
@@ -88,6 +138,11 @@ def make_materials(materials: dict) -> dict[str, bpy.types.Material]:
             bsdf.inputs["Roughness"].default_value = 0.15 if m["translucent"] else 0.7
             if m["translucent"]:
                 bsdf.inputs["Alpha"].default_value = a
+            if m.get("pattern") == "rubble":
+                try:
+                    rubble(mat, (r, g, b))
+                except (KeyError, AttributeError, RuntimeError) as err:  # node names differ between Blender versions
+                    log(f"warning: no rubble pattern for {name}: {err}")
         if m["translucent"]:
             for attr, value in (("surface_render_method", "BLENDED"), ("blend_method", "BLEND")):
                 try:
@@ -333,6 +388,12 @@ def render_preview(resolved: dict, out_dir: str, samples: int) -> str:
     scene.render.filepath = stem + ".png"
     bpy.ops.render.render(write_still=True)
 
+    # the other side, where the stone walls are
+    cam.location = target + Vector((-9.5, -11.0, 4.6)) * max(1.0, 0.72 * span / 7.7)
+    cam.rotation_euler = (target - cam.location).to_track_quat("-Z", "Y").to_euler()
+    scene.render.filepath = stem + "-stone-side.png"
+    bpy.ops.render.render(write_still=True)
+
     # straight down, orthographic, north (plan +Y) up: compare with the plan sheet
     top_data = bpy.data.cameras.new("PreviewTop")
     top_data.type = "ORTHO"
@@ -346,6 +407,69 @@ def render_preview(resolved: dict, out_dir: str, samples: int) -> str:
     scene.render.filepath = stem + "-top.png"
     bpy.ops.render.render(write_still=True)
     return stem + ".png"
+
+
+AXES = {"+X": (1.0, 0.0, 0.0), "-X": (-1.0, 0.0, 0.0), "+Y": (0.0, 1.0, 0.0), "-Y": (0.0, -1.0, 0.0)}
+
+
+def building_corners() -> list[Vector]:
+    out = []
+    for coll in bpy.data.collections[BUILDING].children:
+        for ob in coll.objects:
+            if ob.type == "MESH" and "handedness" not in ob.name.lower():
+                out.extend(ob.matrix_world @ Vector(c) for c in ob.bound_box)
+    return out
+
+
+def render_elevations(resolved: dict, out_dir: str, looking: list[str], samples: int, width_px: int = 1800) -> list[dict]:
+    """Orthographic elevations, one per viewing direction, on a transparent
+    background. Each comes with the mapping from its pixels to plan and
+    height (metres), so a drawn elevation can be laid over it."""
+    scene = bpy.context.scene
+    ground = bpy.data.objects.get("PreviewGround")
+    if ground is not None:
+        ground.hide_render = True
+    test_pieces = [ob for ob in bpy.data.objects if "handedness" in ob.name.lower()]
+    for ob in test_pieces:
+        ob.hide_render = True
+    scene.render.film_transparent = True
+    scene.cycles.samples = max(16, samples // 2)
+    corners = building_corners()
+    out = []
+    for key in looking:
+        L = Vector(AXES[key])
+        H = L.cross(Vector((0.0, 0.0, 1.0)))
+        hs = [c.dot(H) for c in corners]
+        zs = [c.z for c in corners]
+        ds = [c.dot(L) for c in corners]
+        pad = 1.0
+        h0, h1 = min(hs) - pad, max(hs) + pad
+        z0, z1 = min(zs) - pad, max(zs) + pad
+        ppm = width_px / (h1 - h0)
+        res_y = int(round((z1 - z0) * ppm))
+        z0 = z1 - res_y / ppm
+        data = bpy.data.cameras.new(f"Elevation{key}")
+        data.type = "ORTHO"
+        data.sensor_fit = "HORIZONTAL"
+        data.ortho_scale = h1 - h0
+        data.clip_end = 1000.0
+        cam = bpy.data.objects.new(f"Elevation{key}", data)
+        scene.collection.objects.link(cam)
+        centre = H * ((h0 + h1) / 2) + Vector((0.0, 0.0, (z0 + z1) / 2)) + L * (min(ds) - 50.0)
+        cam.location = centre
+        cam.rotation_euler = L.to_track_quat("-Z", "Y").to_euler()
+        scene.camera = cam
+        scene.render.resolution_x, scene.render.resolution_y = width_px, res_y
+        name = f"elevation-looking{key.replace('+', 'p').replace('-', 'm')}.png"
+        scene.render.filepath = os.path.join(out_dir, "preview", name)
+        bpy.ops.render.render(write_still=True)
+        out.append({"looking": key, "file": os.path.join("preview", name), "h_axis": [H.x, H.y, H.z], "h0_m": h0, "z_top_m": z1, "px_per_m": ppm, "size": [width_px, res_y]})
+    scene.render.film_transparent = False
+    if ground is not None:
+        ground.hide_render = False
+    for ob in test_pieces:
+        ob.hide_render = False
+    return out
 
 
 # ---- verification -------------------------------------------------------------
@@ -435,6 +559,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("out_dir")
     ap.add_argument("--preview", action="store_true", help="render a Cycles preview image")
     ap.add_argument("--samples", type=int, default=48)
+    ap.add_argument("--elevations", default="", help="also render orthographic elevations looking along these axes, e.g. -X,+Y")
     ap.add_argument("--no-verify", action="store_true")
     args = ap.parse_args(argv)
 
@@ -449,6 +574,9 @@ def main(argv: list[str]) -> int:
     report["preview_glb"] = os.path.relpath(export_preview_glb(resolved, out_dir), out_dir)
     if args.preview:
         report["preview_png"] = os.path.relpath(render_preview(resolved, out_dir, args.samples), out_dir)
+        looking = [k for k in args.elevations.split(",") if k]
+        if looking:
+            report["elevations"] = render_elevations(resolved, out_dir, looking, args.samples)
     if not args.no_verify:
         report["verify"] = verify(resolved, out_dir)
     ok = not report["export"]["missing"] and report.get("verify", {}).get("all_ok", True)

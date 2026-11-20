@@ -300,6 +300,35 @@ def dome(radius: float, rise: float, segments: int = 32, rings: int = 6, mat: in
     return Mesh(verts, faces, [mat] * len(faces)).oriented_outward()
 
 
+def sphere(radius: float, segments: int = 24, rings: int = 12, mat: int = 0) -> Mesh:
+    """A closed UV sphere centred on the origin."""
+    verts: list[Vec3] = [(0.0, 0.0, radius)]
+    for i in range(1, rings):
+        t = math.pi * i / rings
+        for j in range(segments):
+            a = 2 * math.pi * j / segments
+            verts.append((radius * math.sin(t) * math.cos(a), radius * math.sin(t) * math.sin(a), radius * math.cos(t)))
+    bottom = len(verts)
+    verts.append((0.0, 0.0, -radius))
+    faces: list[tuple[int, ...]] = []
+    for j in range(segments):
+        faces.append((0, 1 + j, 1 + (j + 1) % segments))
+    for i in range(rings - 2):
+        a, b = 1 + i * segments, 1 + (i + 1) * segments
+        for j in range(segments):
+            jn = (j + 1) % segments
+            faces.append((a + j, b + j, b + jn, a + jn))
+    last = 1 + (rings - 2) * segments
+    for j in range(segments):
+        faces.append((last + j, bottom, last + (j + 1) % segments))
+    return Mesh(verts, faces, [mat] * len(faces)).oriented_outward()
+
+
+def cylinder(radius: float, z0: float, z1: float, segments: int = 24, mat: int = 0) -> Mesh:
+    poly = [(radius * math.cos(2 * math.pi * i / segments), radius * math.sin(2 * math.pi * i / segments)) for i in range(segments)]
+    return prism(poly, z0, z1, mat)
+
+
 def merge(meshes: Iterable[Mesh]) -> Mesh:
     out = Mesh()
     for m in meshes:

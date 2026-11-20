@@ -10,9 +10,10 @@ from architectworks.geom import mesh as g
 from architectworks.geom.xform import frame, rotation_z, matmul, translation
 from architectworks.resolve.checks import run_spec_checks
 from architectworks.resolve.model import CATEGORIES, Model, Placement
-from architectworks.resolve.elements import expand_link, expand_round_mass, expand_stone_ring
+from architectworks.resolve.elements import expand_flue, expand_link, expand_round_mass, expand_stone_ring
 from architectworks.resolve.floors import build_floors
 from architectworks.resolve.pavilion import expand_pavilion
+from architectworks.resolve.roofs import expand_flat_roof
 from architectworks.spec.model import BuildingSpec
 from architectworks.units import to_metres
 
@@ -27,7 +28,12 @@ EXPANDERS = {
     "stone_ring": expand_stone_ring,
     "round_mass": expand_round_mass,
     "link": expand_link,
+    "flue": expand_flue,
+    "flat_roof": expand_flat_roof,
 }
+# Links refer to points other elements define; flat roofs are trimmed by
+# every roof placed before them. Both go last, flat roofs after links.
+ORDER = {"link": 1, "flat_roof": 2}
 
 
 def marker_mesh() -> tuple[g.Mesh, list[g.Mesh]]:
@@ -52,12 +58,11 @@ def resolve(spec: BuildingSpec, *, marker: bool = True) -> dict[str, Any]:
     model.checks.extend(run_spec_checks(spec))
     for name, cp in spec.control.items():
         model.points[name] = (to_metres(cp.at[0]), to_metres(cp.at[1]))
-    # links refer to points that other elements define, so they go last
-    for el in sorted(spec.elements, key=lambda e: e.pattern == "link"):
+    for el in sorted(spec.elements, key=lambda e: ORDER.get(e.pattern, 0)):
         EXPANDERS[el.pattern](spec, el, model)
     build_floors(spec, model)
 
-    materials = {m.unreal: {"color": _hex_to_rgba(m.color, m.opacity), "translucent": m.translucent} for m in spec.types.materials.values()}
+    materials = {m.unreal: {"color": _hex_to_rgba(m.color, m.opacity), "translucent": m.translucent, **({"pattern": m.pattern} if m.pattern else {})} for m in spec.types.materials.values()}
     if marker:
         mesh, parts = marker_mesh()
         name = model.unique(f"SM_{spec.building.code}_AW_HandednessMarker", "Fixtures", mesh, MARKER_MATERIAL["unreal"], parts, True, {"basis": "rule", "note": "pipeline test piece, not part of the building"})

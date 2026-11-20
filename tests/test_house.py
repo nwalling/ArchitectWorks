@@ -33,7 +33,10 @@ def test_every_element_resolves(house):
     elements = Counter(p["element"] for p in house["placements"])
     for eid in ("pav_tl", "pav_tr", "pav_center", "pav_br", "pav_living", "hearth", "music", "tower_stair", "core_n", "core_s", "floors"):
         assert elements[eid] > 0, eid
-    assert sum(1 for p in house["placements"] if p["element"].startswith("link_")) == 10
+    # five glazed links (pane and header each) and two stone ones
+    assert sum(1 for p in house["placements"] if p["element"].startswith("link_")) == 12
+    for eid in ("flue_n", "flue_s", "roof_hall_n", "roof_hall_nw", "roof_hall_s"):
+        assert elements[eid] > 0, eid
 
 
 def test_every_component_is_valid(house):
@@ -83,8 +86,11 @@ def test_model_agrees_with_the_foundation_plan(house, tmp_path):
     assert calib["residual_in"]["max"] < 3.0
     report = sheets.overlay(house, calib, calib_path.parent / calib["sheet"], tmp_path)
     ink = report["on_ink_by_kind"]
-    # regression floors, not targets: today 94% / 86% / 72%
+    # regression floors, not targets: today 94% / 86% / 67%. Walls were 72%
+    # before the two stone links read off the NW elevation, which land on
+    # narrower drawn walls (43% and 48%); no wall may fall far off the ink.
     assert ink["column"] >= 0.9
     assert ink["glass"] >= 0.8
-    assert ink["wall"] >= 0.68
+    assert ink["wall"] >= 0.65
+    assert min(e["on_ink"] for e in report["elements"] if e["kind"] == "wall") >= 0.4
     assert (tmp_path / "foundation-plan.overlay.jpg").exists()

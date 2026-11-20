@@ -1,0 +1,38 @@
+# Where the plan and the levels fall on exterior-elevations.jpg (1200 x 1600).
+#
+# The photo is turned a quarter turn counter-clockwise first, which puts both
+# elevations upright: the southwest elevation above, the northwest below.
+# Pixel positions below are in the turned photo, after background flattening.
+#
+# Across each view, the skylight domes stand on the pavilion centers, so their
+# pixel x against the centers' plan positions gives the horizontal scale and
+# offset. Up each view, the lettered level lines give the vertical scale; they
+# are read at both ends where the sheet letters them at both ends, which also
+# measures the photo's slight tilt (about 0.6 degrees).
+#
+# The southwest elevation looks along plan -X (plan +Y runs to the right) and
+# the northwest elevation along plan +Y (plan +X to the right). The fits agree
+# with the flues: both elevations put them on the two round cores.
+sheet: exterior-elevations.jpg
+rotate: ccw
+views:
+  southwest:
+    looking: -X
+    crop: [80, 60, 1560, 560]
+    across: {cp_br: 541, cp_center: 711, cp_living: 828, cp_tr: 1057, cp_tl: 1142}
+    levels:
+      - {level: ff_bedroom, px: [200, 471], quote: "F.F. @ BDRM/STUDY ELEV 100'-0\""}
+      - {level: t_o_masonry_bedroom, px: [200, 386], quote: "T.O. MAS. WALL @ BDRM/RM ELEV 105'-8\""}
+      - {level: t_o_ring_bedroom, px: [200, 312], quote: "T.O. COMP. RING @ BDRM/RM ELEV 110'-9\""}
+      - {level: t_o_header, px: [1420, 355], quote: "TOP OF HEADER ELEV 107'-1 1/2\""}
+      - {level: t_o_ring_living, px: [1420, 289], quote: "T.O. COMP. RING @ L.R. ELEV 111'-10 3/4\""}
+  northwest:
+    looking: +Y
+    crop: [80, 640, 1560, 1080]
+    across: {cp_living: 512, cp_tl: 597, cp_center: 720, cp_br: 892, cp_tr: 927}
+    levels:
+      - {elev: 105'-0", px: [200, 878], quote: "T.O. MAS. WALL @ BATH ELEV 105'-0\""}
+      - {elev: 99'-2", px: [200, 970], quote: "F.F. @ LANDING ELEV 99'-2\""}
+      - {level: t_o_ring_bedroom, px: [1350, 775], quote: "T.O. COMP. RING @ BDRM ELEV 110'-9\""}
+      - {level: ff_bedroom, px: [1350, 944], quote: "F.F. @ BDRM/STUDY ELEV 100'-0\""}
+      - {level: ff_music, px: [1350, 970], quote: "F.F. @ MUSIC RM ELEV 98'-4\""}

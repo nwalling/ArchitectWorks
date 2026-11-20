@@ -1,4 +1,4 @@
-"""Elements that are not hexagons: stone rings, round masses and links."""
+"""Elements that are not hexagons: stone rings, round masses, flues and links."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from architectworks.geom import mesh as g
 from architectworks.geom.xform import frame, matmul, rotation_z, translation
 from architectworks.resolve.model import Check, Footprint, Model, Placement, src_dict
 from architectworks.resolve.pavilion import INCH, Z, camel, fmt_m, member_frame, norm_span, segments_for
-from architectworks.spec.model import BuildingSpec, Link, RoundMass, StoneRing
+from architectworks.spec.model import BuildingSpec, Flue, Link, RoundMass, StoneRing
 from architectworks.units import to_metres
 
 
@@ -78,6 +78,26 @@ def expand_round_mass(spec: BuildingSpec, el: RoundMass, model: Model) -> None:
     mat, nanite = _material(spec, el.type)
     name = model.unique(f"{prefix}_{camel(el.id)}_RoundMass", "Envelope", mesh, mat, [mesh] if t.collision else [], nanite, src_dict(t.src, type=el.type))
     model.place(Placement(f"{el.id}.mass", name, "Envelope", translation((cx, cy, z_f)), el.id, el.src.basis, el.src.confidence, src_dict(el.src, type=el.type)))
+    model.points[el.id] = (cx, cy)
+
+
+def expand_flue(spec: BuildingSpec, el: Flue, model: Model) -> None:
+    """A pipe from ``base`` up to a ball cap whose top is at ``top``."""
+    prefix = f"SM_{spec.building.code}"
+    t = spec.types.components[el.type]
+    cx, cy = _center(spec, el.center)
+    z_f = _z(spec, el.floor)
+    z_base, z_top = _z(spec, el.base) - z_f, _z(spec, el.top) - z_f
+    r_pipe, r_cap = to_metres(t.diameter) / 2, to_metres(t.cap_diameter) / 2
+    z_cap = z_top - r_cap
+    if z_cap - r_cap * 0.5 <= z_base:
+        raise ValueError(f"{el.id}: the cap's top is too close to the base of the pipe")
+    pipe = g.cylinder(r_pipe, z_base, z_cap, 24)
+    cap = g.sphere(r_cap, 24, 12).transformed(lambda v: (v[0], v[1], v[2] + z_cap))
+    mat, nanite = _material(spec, el.type)
+    src = src_dict(el.src, type=el.type)
+    name = model.unique(f"{prefix}_{camel(el.id)}", "Roof", g.merge([pipe, cap]), mat, [pipe] if t.collision else [], nanite, src)
+    model.place(Placement(f"{el.id}.flue", name, "Roof", translation((cx, cy, z_f)), el.id, el.src.basis, el.src.confidence, src))
     model.points[el.id] = (cx, cy)
 
 

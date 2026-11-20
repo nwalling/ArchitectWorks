@@ -76,6 +76,7 @@ class Material(Strict):
     color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
     translucent: bool = False
     opacity: float = 1.0
+    pattern: Literal["rubble"] | None = Field(None, description="procedural surface for previews (Blender); Unreal gets the material slot only")
 
 
 class Profile(Strict):
@@ -86,7 +87,7 @@ class Profile(Strict):
     src: Source
 
 
-ComponentKind = Literal["column", "beam", "panel", "slab", "wall", "roof", "ring", "dome", "plate"]
+ComponentKind = Literal["column", "beam", "panel", "slab", "wall", "roof", "ring", "dome", "plate", "flue"]
 
 
 class ComponentType(Strict):
@@ -98,6 +99,8 @@ class ComponentType(Strict):
     thickness: Length | None = None
     facing: Length | None = Field(None, description="walls: masonry facing outside the dimensioned face")
     rise: Length | None = None
+    diameter: Length | None = Field(None, description="flues: pipe diameter")
+    cap_diameter: Length | None = Field(None, description="flues: diameter of the ball cap")
     collision: bool = True
     src: Source
 
@@ -121,6 +124,7 @@ class ComponentType(Strict):
             "ring": ("section",),
             "dome": ("rise",),
             "plate": ("section",),
+            "flue": ("diameter", "cap_diameter"),
         }[self.kind]
         missing = [f for f in need if getattr(self, f) is None]
         if missing:
@@ -309,7 +313,60 @@ class Link(Strict):
     src: Source
 
 
-Element = Annotated[RadialPavilion | StoneRing | RoundMass | Link, Field(discriminator="pattern")]
+PointRef = str | tuple[Length, Length]
+
+
+class OutlineCircle(Strict):
+    center: str = Field(description="named point")
+    radius: Length
+
+
+class ShedSkylight(TypeRef):
+    """A lean-to glass skylight standing on a flat roof: the glass rises from
+    a low edge on the roof to a high edge ``rise`` above it, with a back
+    panel and two triangular ends."""
+
+    center: tuple[Length, Length] = Field(description="plan centre of the skylight's footprint")
+    length: Length = Field(description="along the edges")
+    depth: Length = Field(description="from the low edge to the high edge, in plan")
+    rise: Length
+    rises_toward: Angle = Field(description="plan direction from the low edge to the high edge, counter-clockwise from +X")
+    frame: str = Field(description="type of the ends, back and ridge beam")
+    beam_overhang: Length = Field(Fraction(0), description="how far the ridge beam runs past each end")
+
+
+class FlatRoof(Strict):
+    """A flat roof over an outline traced on the roof plan. Where another
+    roof rises above it, it is cut back to meet that roof."""
+
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    pattern: Literal["flat_roof"]
+    name: str | None = None
+    floor: str = Field(description="level of the floor it covers")
+    type: str = Field(description="a roof type: thickness and material")
+    top: str = Field(description="level id of the top of the roof")
+    outline: list[PointRef] = Field(min_length=3, description="named points or plan coordinates, in order")
+    circles: list[OutlineCircle] = Field([], description="round pieces added to the outline")
+    trim: bool = Field(True, description="cut away wherever another roof is above this one")
+    skylights: list[ShedSkylight] = []
+    src: Source
+
+
+class Flue(Strict):
+    """A round flue pipe rising from a masonry mass to a ball cap."""
+
+    id: str = Field(pattern=r"^[a-z][a-z0-9_]*$")
+    pattern: Literal["flue"]
+    name: str | None = None
+    center: str
+    floor: str
+    type: str = Field(description="a flue type: pipe and cap diameters")
+    base: str = Field(description="level id where the pipe starts")
+    top: str = Field(description="level id of the top of the cap")
+    src: Source
+
+
+Element = Annotated[RadialPavilion | StoneRing | RoundMass | Link | FlatRoof | Flue, Field(discriminator="pattern")]
 
 
 # ---- checks and open items --------------------------------------------------
@@ -411,8 +468,20 @@ class BuildingSpec(Strict):
                 if el.kind == "masonry" and el.top is None:
                     errors.append(f"{w}: a masonry link needs a top level")
                 continue
+            if isinstance(el, FlatRoof):
+                type_ok(el.type, "roof", w)
+                level_ok(el.top, w)
+                for sk in el.skylights:
+                    type_ok(sk.type, "panel", w)
+                    type_ok(sk.frame, "beam", w)
+                continue
             if el.center not in self.control:
                 errors.append(f"{w}: unknown control point {el.center!r}")
+            if isinstance(el, Flue):
+                type_ok(el.type, "flue", w)
+                level_ok(el.base, w)
+                level_ok(el.top, w)
+                continue
             if isinstance(el, StoneRing):
                 type_ok(el.type, "wall", w)
                 level_ok(el.top, w)

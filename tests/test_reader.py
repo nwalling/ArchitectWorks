@@ -144,7 +144,10 @@ def test_draft_from_the_hand_reading(draft):
 
 
 def test_score_of_the_hand_reading_draft(draft, key):
-    s = score(draft, key)
+    from architectworks.reader.score import sheet_for_image
+
+    assert sheet_for_image(key, SHEET) == "foundation"
+    s = score(draft, key, "foundation")
     summary = s["summary"]
     assert summary["center_points"]["matched"] == 9
     assert summary["center_points"]["exact"] >= 3

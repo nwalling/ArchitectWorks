@@ -6,7 +6,7 @@ It works the way a careful person would: read the drawings into a plain-text des
 
 ![The example house, built from the hand-written spec](docs/images/house.jpg)
 
-*The example house, generated from [`house.yaml`](projects/example-house/house.yaml) and rendered headless in Blender 5.2: six pavilions, a stair tower, the music room wall, two round cores and the glazed links between them. 65 unique meshes, 232 placements.*
+*The example house, generated from [`house.yaml`](projects/example-house/house.yaml) and rendered headless in Blender 5.2, from the stone side: six pavilions, a stair tower, the music room, two round cores with their flues, the flat roofs and glazed links between them. 74 unique meshes, 241 placements.*
 
 ## Phase 2 status: reading the sheets
 
@@ -62,9 +62,12 @@ Phase 1 models the whole house from a hand-written spec. Its gate is that the mo
 | Every pavilion center placed from the dimension chains | Done: 6 of 9 center points are dimensioned, 3 measured |
 | All ten dimension chains on the foundation plan close | Done, with two readings settled by the fit (below) |
 | Photo of the plan fitted to the model | Done: 22 points, 1.3" mean residual, 2.6" worst |
-| Model drawn over the straightened plan and scored | Done: 94% of column outline, 86% of glazing and 72% of wall outline lands on ink |
-| Roofs between pavilions, music room roof, interior walls | Not yet: needs the floor plan, detail D-2 or sharper scans |
-| Outlines checked against the elevations | Not yet |
+| Model drawn over the straightened plan and scored | Done: 94% of column outline, 86% of glazing and 67% of wall outline lands on ink (72% before the two new stone walls, below) |
+| Flat roofs between the pavilions and over the music room | Done (step 2): outlines from the roof plan, height from the NW elevation |
+| Music room skylight, fireplace flues | Done (step 2): the flues check out on both elevations to within 4 px |
+| Stone walls that read as stone | Done (step 2): rubble pattern in the previews, two missing stone walls added |
+| Outlines checked against the elevations | Done (step 2): both elevations fitted and laid over orthographic renders |
+| Interior walls | Not yet: needs the floor plan |
 | Walk it in Unreal | Waiting for a machine with Unreal |
 
 <table><tr>
@@ -86,6 +89,27 @@ That loop settled three readings the photo alone could not:
 - **The 8'-0" and 11'-8" arc radii are to the face of the 12" block.** The stone facing sits outside the block. The living room and music room arcs are not lettered; they measure 12'-4" and 8'-6".
 
 The glass link between the two north pavilions is lettered 5'-0". The model gets 5'-0" from the pavilion centers and sides alone.
+
+### Step 2: roofs, flues and the elevations
+
+The roof framing plan is fitted to the same plan coordinates from its center points (5" worst residual). The elevations are fitted per view: across from the skylight domes, which stand on the pavilion centers, and up from the lettered level lines. That turns out to be enough to say which way each elevation looks: the southwest one looks along plan −X, the northwest one along plan +Y.
+
+The fireplace flues are the independent check. Nothing about them went into the fits. Their plan positions come from the circles on the roof plan, and both elevations then draw them within 4 px of where the fits put them. Each flue stands 6" to 8" south of the round core it rises from, still inside it.
+
+| What | Where it comes from |
+| --- | --- |
+| Three flat roofs: the strip between the north pavilions, the north-west hall and stair tower, and one over the music room and the halls round it | Outlines from named points on the roof plan; top at 107'-4" scaled off the NW elevation. Each is cut back wherever a pavilion roof rises above it, so the two meet along the line where one passes through the other. "ROOFING ON FLAT SURFACES TO BE 4 PLY BUILT-UP ROOF" |
+| Glass skylight on the music room roof | Length, rise and ridge-beam overhang from the NW elevation; where it sits north to south is assumed. "ALL SKYLIGHTS TO BE 2 LAYERS OF TEMPERED 1/4" GLASS" |
+| Two fireplace flues with ball caps | Plan from the roof plan and both elevations; tops at 115'-3" and 114'-8", 12" pipe, 19" ball |
+| Stone walls from the living room to the music room and from the music room to the south-east pavilion | The NW elevation draws stone there without a break |
+
+`aw build --preview` now also renders the model straight on from each fitted elevation's direction, and lays the drawing over it:
+
+![The northwest elevation: drawing, model and both together](docs/images/elevation-northwest.jpg)
+
+[The southwest elevation](docs/images/elevation-southwest.jpg) compares the same way, and [the glass side](docs/images/house-glass-side.jpg) of the house now shows the flat roofs and flues too.
+
+What the comparison still shows: the model's music room sits about 2'-0" further south than the southwest elevation draws it; the living room's east side is drawn with a glazed gable the model does not have; the flat roofs' turned-up beam ends and the 1/4" per foot drainage taper are not modelled.
 
 ## Phase 0 status
 
@@ -133,6 +157,9 @@ Output lands in `projects/example-house/out/<spec name>/`:
 | `blender_report.json` | Export mode, file hashes, re-import results, FBX header |
 | `sheets/*.overlay.jpg`, `*.check.json` | The model over each calibrated sheet, and the agreement scores |
 | `sheets/*.rectified.png` | The sheet straightened into plan coordinates; also a reference plane in the `.blend` |
+| `preview/example-house-stone-side.png` | The other side of the house, where the stone walls are |
+| `preview/elevation-looking*.png` | Orthographic elevations, one per fitted elevation sheet (with `--preview`) |
+| `sheets/*.compare.jpg`, `*.elevation-fit.json` | Each drawn elevation over the matching render, and the fit that lines them up |
 
 ## In Unreal
 

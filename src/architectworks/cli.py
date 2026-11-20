@@ -12,10 +12,13 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+import yaml
+
 from architectworks.resolve import resolve
 from architectworks.spec import load_spec
 from architectworks.spec.model import json_schema
 from architectworks.unreal_bundle import REPO_ROOT, write_bundle
+from architectworks.units import to_metres
 
 BLENDGEN = REPO_ROOT / "blendgen" / "build.py"
 
@@ -37,6 +40,18 @@ def cmd_sheets(spec_path: Path, spec, resolved: dict, out: Path) -> list[dict]:
             print(f"  skipping sheet checks: {err}")
             return reports
         calib_path = spec_path.parent / sheet.calibration
+        if "views" in (yaml.safe_load(calib_path.read_text(encoding="utf-8")) or {}):
+            datum = spec.levels[spec.datum].elev
+            levels_m = {k: to_metres(lv.elev - datum) for k, lv in spec.levels.items()}
+            fits = sheets.fit_elevations(calib_path, resolved["points"], levels_m, float(datum) / 12.0)
+            fits["calibration"] = str(calib_path.resolve())
+            (out / "sheets").mkdir(parents=True, exist_ok=True)
+            (out / "sheets" / f"{sid}.elevation-fit.json").write_text(json.dumps(fits, indent=1) + "\n", encoding="utf-8")
+            for vname, v in fits["views"].items():
+                worst = max([abs(e) for e in v["residual_px"]["across"].values()] + [abs(e) for e in v["residual_px"]["levels"].values()])
+                print(f"  sheet {sid}, {vname} elevation (looking {v['looking']}): {v['px_per_ft'][0]} px/ft across, {v['px_per_ft'][1]} up; worst residual {worst:.1f} px")
+            reports.append({"sheet": sid, "elevations": fits})
+            continue
         calib = sheets.fit(calib_path, resolved["points"])
         report = sheets.overlay(resolved, calib, calib_path.parent / calib["sheet"], out / "sheets")
         reports.append(report)
@@ -76,8 +91,34 @@ def blender_command(resolved_path: Path, out: Path, extra: list[str]) -> list[st
     return [blender, "--background", "--factory-startup", "--python", str(BLENDGEN), "--", str(resolved_path), str(out), *extra]
 
 
+def elevation_fits(out: Path) -> list[dict]:
+    return [json.loads(p.read_text(encoding="utf-8")) for p in sorted((out / "sheets").glob("*.elevation-fit.json"))]
+
+
+def cmd_compare_elevations(out: Path, report: dict) -> list[dict]:
+    """Lay each drawn elevation over the matching orthographic render."""
+    from architectworks import sheets
+
+    renders = {r["looking"]: r for r in report.get("elevations", [])}
+    results = []
+    for fits in elevation_fits(out):
+        drawing = sheets.load_elevation_sheet(Path(fits["calibration"]))
+        for vname, view in fits["views"].items():
+            r = renders.get(view["looking"])
+            if r is None:
+                continue
+            dest = out / "sheets" / f"{Path(fits['sheet']).stem}.{vname}.compare.jpg"
+            res = sheets.compare_elevation(view, r, out, drawing, dest, f"{vname.capitalize()} elevation")
+            results.append(res)
+            print(f"  {vname} elevation: {res['drawing_ink_inside_model']:.0%} of the drawing's ink falls inside the model's silhouette; {dest}")
+    return results
+
+
 def cmd_blender(out: Path, preview: bool, samples: int) -> dict:
     extra = ["--preview", "--samples", str(samples)] if preview else []
+    looking = sorted({v["looking"] for f in elevation_fits(out) for v in f["views"].values()})
+    if preview and looking:
+        extra += ["--elevations", ",".join(looking)]
     cmd = blender_command(out / "resolved.json", out, extra)
     print("running:", " ".join(cmd))
     proc = subprocess.run(cmd, capture_output=True, text=True)
@@ -100,6 +141,11 @@ def cmd_blender(out: Path, preview: bool, samples: int) -> dict:
             print(f"  FBX header: {v['fbx_global_settings']}")
     if report.get("preview_png"):
         print(f"  preview: {out / report['preview_png']}")
+    if report.get("elevations"):
+        try:
+            report["compare"] = cmd_compare_elevations(out, report)
+        except ImportError as err:
+            print(f"  skipping elevation comparisons: {err}")
     if proc.returncode != 0 or not report["ok"]:
         raise SystemExit(f"Blender stage failed; see {report_path} and {log}")
     return report
@@ -183,13 +229,17 @@ def cmd_draft(reading_path: Path, sheet: Path, out: Path | None, key: Path | Non
     for note in draft["review"]:
         print(f"  [review] {note}")
     if key:
-        cmd_score(out, key)
+        cmd_score(out, key, sheet)
 
 
-def cmd_score(draft_path: Path, key_path: Path) -> dict:
-    from architectworks.reader.score import score
+def cmd_score(draft_path: Path, key_path: Path, image: Path | None = None) -> dict:
+    from architectworks.reader.score import score, sheet_for_image
 
-    result = score(json.loads(draft_path.read_text(encoding="utf-8")), load_spec(key_path))
+    key = load_spec(key_path)
+    sheet = sheet_for_image(key, image) if image else None
+    result = score(json.loads(draft_path.read_text(encoding="utf-8")), key, sheet)
+    if sheet:
+        print(f"scoring the key's points from sheet {sheet!r} only")
     out = draft_path.with_name(draft_path.name.replace(".draft.json", "") + ".score.json")
     out.write_text(json.dumps(result, indent=1) + "\n", encoding="utf-8")
     s = result["summary"]
@@ -249,6 +299,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("score", help="score a draft against a hand-written spec")
     p.add_argument("draft", type=Path)
     p.add_argument("spec", type=Path)
+    p.add_argument("--sheet", type=Path, help="the sheet image the draft was read from: score only the key's points from that sheet")
 
     args = ap.parse_args(argv)
     if args.cmd == "detect":
@@ -261,7 +312,7 @@ def main(argv: list[str] | None = None) -> int:
         cmd_draft(args.reading, args.sheet, args.out, args.score)
         return 0
     if args.cmd == "score":
-        cmd_score(args.draft, args.spec)
+        cmd_score(args.draft, args.spec, args.sheet)
         return 0
     if args.cmd == "schema":
         text = json.dumps(json_schema(), indent=1) + "\n"

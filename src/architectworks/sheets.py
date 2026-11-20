@@ -157,3 +157,115 @@ def overlay(resolved: dict[str, Any], calib: dict[str, Any], image_path: Path, o
     }
     (out_dir / f"{stem}.check.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
     return report
+
+
+# ---- elevations ---------------------------------------------------------------
+
+LOOKING = {"+X": (1.0, 0.0), "-X": (-1.0, 0.0), "+Y": (0.0, 1.0), "-Y": (0.0, -1.0)}
+
+
+def h_axis(looking: str) -> tuple[float, float]:
+    """Plan direction that runs to the right in an elevation looking this way
+    (the viewing direction crossed with up)."""
+    lx, ly = LOOKING[looking]
+    return ly, -lx
+
+
+def load_elevation_sheet(calib_path: Path) -> np.ndarray:
+    cal = yaml.safe_load(Path(calib_path).read_text(encoding="utf-8"))
+    gray = cv2.imread(str(Path(calib_path).parent / cal["sheet"]), cv2.IMREAD_GRAYSCALE)
+    if gray is None:
+        raise FileNotFoundError(Path(calib_path).parent / cal["sheet"])
+    turn = {None: None, "cw": cv2.ROTATE_90_CLOCKWISE, "ccw": cv2.ROTATE_90_COUNTERCLOCKWISE, "180": cv2.ROTATE_180}[cal.get("rotate")]
+    if turn is not None:
+        gray = cv2.rotate(gray, turn)
+    return flatten(gray)
+
+
+def fit_elevations(calib_path: Path, points_m: dict[str, list[float]], levels_m: dict[str, float], datum_ft: float) -> dict[str, Any]:
+    """Per view: pixel x = sx * h + bx (h in metres along the view's
+    horizontal axis), pixel y = sy * z + by + tilt * x (z in metres above the
+    datum)."""
+    from architectworks.units import parse_length, to_metres
+
+    cal = yaml.safe_load(Path(calib_path).read_text(encoding="utf-8"))
+    views: dict[str, Any] = {}
+    for name, v in cal["views"].items():
+        hx, hy = h_axis(v["looking"])
+        across = {k: x for k, x in v["across"].items() if k in points_m}
+        if len(across) < 2:
+            raise ValueError(f"{calib_path}: view {name} needs two named points the model knows")
+        h = np.array([points_m[k][0] * hx + points_m[k][1] * hy for k in across])
+        xs = np.array(list(across.values()), float)
+        (sx, bx), *_ = np.linalg.lstsq(np.stack([h, np.ones_like(h)], 1), xs, rcond=None)
+        res_x = {k: round(float(sx * hh + bx - x), 1) for k, hh, x in zip(across, h, xs)}
+        rows, ys, labels = [], [], []
+        for lv in v["levels"]:
+            if "level" in lv:
+                if lv["level"] not in levels_m:
+                    continue
+                z = levels_m[lv["level"]]
+                labels.append(lv["level"])
+            else:
+                z = to_metres(parse_length(lv["elev"])) - datum_ft * FT
+                labels.append(lv["elev"])
+            px, py = lv["px"]
+            rows.append([z, 1.0, px])
+            ys.append(py)
+        A = np.array(rows, float)
+        if len({r[2] for r in rows}) == 1:
+            A = A[:, :2]
+        sol, *_ = np.linalg.lstsq(A, np.array(ys, float), rcond=None)
+        sy, by, tilt = float(sol[0]), float(sol[1]), float(sol[2]) if len(sol) > 2 else 0.0
+        res_y = {lab: round(float(sy * r[0] + by + tilt * r[2] - y), 1) for lab, r, y in zip(labels, rows, ys)}
+        views[name] = {
+            "looking": v["looking"],
+            "h_axis": [hx, hy],
+            "x": [float(sx), float(bx)],
+            "y": [sy, by, tilt],
+            "crop": v.get("crop"),
+            "px_per_ft": [round(float(sx) * FT, 2), round(-sy * FT, 2)],
+            "residual_px": {"across": res_x, "levels": res_y},
+        }
+    return {"sheet": cal["sheet"], "views": views}
+
+
+def compare_elevation(view: dict[str, Any], render: dict[str, Any], render_dir: Path, drawing: np.ndarray, out_path: Path, title: str) -> dict[str, Any]:
+    """The drawn elevation warped into the render's frame, above the render,
+    above the two laid over each other (model outline in red)."""
+    rgba = cv2.imread(str(render_dir / render["file"]), cv2.IMREAD_UNCHANGED)
+    if rgba is None:
+        raise FileNotFoundError(render_dir / render["file"])
+    H_px, W_px = rgba.shape[:2]
+    ppm, h0, ztop = render["px_per_m"], render["h0_m"], render["z_top_m"]
+    sx, bx = view["x"]
+    sy, by, tilt = view["y"]
+    # render pixel (i, j) -> h = h0 + i/ppm, z = ztop - j/ppm -> drawing (x, y)
+    x0 = sx * h0 + bx
+    M = np.array([[sx / ppm, 0.0, x0], [tilt * sx / ppm, -sy / ppm, sy * ztop + by + tilt * x0]])
+    warped = cv2.warpAffine(drawing, M, (W_px, H_px), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP, borderValue=255)
+    alpha = rgba[:, :, 3:4].astype(np.float32) / 255.0 if rgba.shape[2] == 4 else np.ones((H_px, W_px, 1), np.float32)
+    on_white = (rgba[:, :, :3].astype(np.float32) * alpha + 255.0 * (1 - alpha)).astype(np.uint8)
+    sheet_bgr = cv2.cvtColor(warped, cv2.COLOR_GRAY2BGR)
+    mask = (alpha[:, :, 0] > 0.1).astype(np.uint8)  # glass is translucent but still the model
+    edge = cv2.morphologyEx(mask, cv2.MORPH_GRADIENT, np.ones((3, 3), np.uint8)) > 0
+    over = sheet_bgr.copy()
+    tint = over.copy()
+    tint[mask > 0] = (0.55 * tint[mask > 0] + 0.45 * np.array([120, 160, 255])).astype(np.uint8)
+    over = tint
+    over[edge] = (0, 0, 220)
+    # how much of the drawing's ink falls inside the model's silhouette
+    ink = warped < 150
+    inside = float((ink & (mask > 0)).sum()) / max(1, int(ink.sum()))
+
+    def band(img: np.ndarray, text: str) -> np.ndarray:
+        bar = np.full((44, img.shape[1], 3), 255, np.uint8)
+        cv2.putText(bar, text, (12, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (40, 40, 40), 2, cv2.LINE_AA)
+        return np.vstack([bar, img])
+
+    sheet_img = band(sheet_bgr, f"{title}: the drawing, straightened to the model's scale")
+    render_img = band(on_white, f"{title}: the model, rendered in the same frame")
+    over_img = band(over, f"{title}: model outline (red) over the drawing")
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    cv2.imwrite(str(out_path), np.vstack([sheet_img, render_img, over_img]), [cv2.IMWRITE_JPEG_QUALITY, 88])
+    return {"view": title, "image": str(out_path), "drawing_ink_inside_model": round(inside, 3)}
