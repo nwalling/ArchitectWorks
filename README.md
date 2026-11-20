@@ -107,6 +107,8 @@ The fireplace flues are the independent check. Nothing about them went into the 
 
 ![The northwest elevation: drawing, model and both together](docs/images/elevation-northwest.jpg)
 
+[`docs/views`](docs/views) has finished shots from each blueprint view: each elevation drawn above the model in the same view and scale, an eye-level shot from the same side, and the roof framing plan beside the model seen from straight above.
+
 [The southwest elevation](docs/images/elevation-southwest.jpg) compares the same way, and [the glass side](docs/images/house-glass-side.jpg) of the house now shows the flat roofs and flues too.
 
 A second pass, after review against the drawings, added:
