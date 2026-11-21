@@ -4,7 +4,7 @@ Turns an architect's blueprint set into a Blender model that lands in Unreal Eng
 
 It works the way a careful person would: read the drawings into a plain-text description of the building first, argue with that text until it matches the sheets, then build geometry from the text. The sheets are allowed to be vague. The geometry is not.
 
-![The example house, built from the hand-written spec](docs/images/house.jpg)
+![The example house, built from the hand-written spec, textured and set in an invented Northern California landscape](docs/images/house.jpg)
 
 *The example house, generated from [`house.yaml`](projects/example-house/house.yaml) and rendered headless in Blender 5.2, from the stone side: six pavilions, a stair tower, the music room, two round cores with their flues, the flat roofs, trellises and glazed links between them. 101 unique meshes, 328 placements.*
 
