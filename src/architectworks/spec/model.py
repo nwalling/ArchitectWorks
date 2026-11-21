@@ -71,12 +71,25 @@ class ControlPoint(Strict):
     src: Source
 
 
+class TextureRef(Strict):
+    """A photographic texture set (colour, normal, roughness) from Poly Haven,
+    which publishes its assets CC0."""
+
+    polyhaven: str = Field(pattern=r"^[a-z0-9_]+$", description="asset id on polyhaven.com")
+    tile: Length | None = Field(None, description="real-world width of one repeat; default: the asset's own")
+    resolution: Literal["1k", "2k", "4k"] = "2k"
+    tint: float = Field(0.0, ge=0.0, le=1.0, description="how far to pull the texture's hue toward the material colour")
+    value: float = Field(1.0, gt=0.0, le=2.0, description="brightness multiplier on the texture's colour")
+    macro: bool = Field(False, description="add large-scale variation, for ground that would otherwise show its repeat")
+
+
 class Material(Strict):
     unreal: str = Field(pattern=r"^M_[A-Za-z0-9_]+$")
     color: str = Field(pattern=r"^#[0-9a-fA-F]{6}$")
     translucent: bool = False
     opacity: float = 1.0
-    pattern: Literal["rubble", "shingles"] | None = Field(None, description="procedural surface for previews (Blender); Unreal gets the material slot only")
+    pattern: Literal["rubble", "shingles"] | None = Field(None, description="procedural surface for previews (Blender), used when no texture is fetched")
+    texture: TextureRef | None = None
 
 
 class Profile(Strict):
@@ -477,6 +490,57 @@ class Floors(Strict):
     gap_fill: Length = Field(Fraction(0), description="close gaps narrower than twice this between footprints on one level")
 
 
+class SiteLocation(Strict):
+    latitude: float = Field(ge=-90, le=90)
+    longitude: float = Field(ge=-180, le=180)
+    utc_offset: float = Field(description="hours, for the sun's position")
+    note: str | None = None
+
+
+class SiteTerrain(Strict):
+    """Ground beyond the graded pad. Invented unless a survey says otherwise:
+    smooth rolling relief plus a steady fall, and far hills on the horizon."""
+
+    pad: Length = Field(description="graded ground at finished grade, measured out from the building")
+    blend: Length = Field(description="distance over which the pad eases into the terrain")
+    extent: Length = Field(description="half-width of the detailed terrain")
+    relief: Length = Field(description="height of the rolling ground")
+    wavelength: Length = Field(description="typical distance between rises")
+    fall: Angle = Field(description="plan direction the ground falls toward, counter-clockwise from plan +X")
+    grade: float = Field(description="general slope, rise over run")
+    hills: Length = Field(description="height of the far hills")
+    seed: int = 1
+    ground: str = Field(description="material id of the ground")
+
+
+class SitePlanting(Strict):
+    polyhaven: str = Field(pattern=r"^[a-z0-9_]+$", description="model id on polyhaven.com")
+    count: int = Field(ge=0)
+    near: Length = Field(description="nearest to the building")
+    far: Length = Field(description="farthest from the building")
+    scale: tuple[float, float] = (0.8, 1.2)
+    spacing: Length = Field(Fraction(0), description="least distance between two of these")
+    note: str | None = None
+
+
+class SiteSun(Strict):
+    date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    time: str = Field(pattern=r"^\d{2}:\d{2}$", description="local clock time")
+
+
+class Site(Strict):
+    """Where the building stands and what is round it. Without a site plan
+    almost all of it is assumed, and says so."""
+
+    location: SiteLocation
+    true_north: Angle = Field(description="plan direction of true north, counter-clockwise from plan +X")
+    grade: str = Field(description="level id of finished grade at the building")
+    terrain: SiteTerrain
+    planting: list[SitePlanting] = []
+    sun: SiteSun
+    src: Source
+
+
 class BuildingSpec(Strict):
     spec_version: str
     building: Building
@@ -488,6 +552,7 @@ class BuildingSpec(Strict):
     types: Types
     elements: list[Element]
     floors: Floors = Floors()
+    site: Site | None = None
     checks: Checks = Checks()
     open_items: list[OpenItem] = []
 
@@ -599,6 +664,11 @@ class BuildingSpec(Strict):
                 type_ok(el.trellis.slat, "beam", w)
                 if not r.glazed and (r.ring.top is None or r.ring.radius is None) and not el.stone_arcs:
                     errors.append(f"{w}: without a glazed roof the ring needs both its top and its radius, or a stone arc to bear on")
+        if self.site is not None:
+            level_ok(self.site.grade, "site")
+            if self.site.terrain.ground not in mats:
+                errors.append(f"site.terrain: unknown material {self.site.terrain.ground!r}")
+            src_ok(self.site.src, "site")
         for ch in self.checks.chains:
             if ch.sheet not in self.sheets:
                 errors.append(f"checks.chains: unknown sheet {ch.sheet!r}")

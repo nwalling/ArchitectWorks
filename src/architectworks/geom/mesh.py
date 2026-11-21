@@ -177,6 +177,42 @@ def box_uvs(mesh: Mesh, metres_per_tile: float = 1.0) -> list[list[Vec2]]:
     return out
 
 
+def radial_uvs(mesh: Mesh, mode: str = "cylinder", metres_per_tile: float = 1.0) -> list[list[Vec2]]:
+    """UVs in metres round the mesh's own vertical axis.
+
+    ``cylinder``: walls wrap round the axis (u = arc length, v = height), so
+    curved stone does not stretch; near-flat faces get a plan projection.
+    ``cone``: sloped faces get u = arc length and v = distance down the
+    slope, so shingle courses run level round a conical roof.
+    Angles are unwrapped within each face; one seam remains where the angle
+    wraps."""
+    s = 1.0 / metres_per_tile
+    out: list[list[Vec2]] = []
+    for f in mesh.faces:
+        nx, ny, nz = unit(face_normal(mesh, f))
+        pts = [mesh.verts[i] for i in f]
+        if mode == "cone" and 0.25 < abs(nz) < 0.98:
+            th0 = math.atan2(pts[0][1], pts[0][0])
+            uvs = []
+            for x, y, _z in pts:
+                th = math.atan2(y, x)
+                th += 2 * math.pi * round((th0 - th) / (2 * math.pi))
+                r = math.hypot(x, y)
+                uvs.append((th * r * s, -r / abs(nz) * s))
+            out.append(uvs)
+        elif abs(nz) >= 0.7:
+            out.append([(x * s, y * s) for x, y, _z in pts])
+        else:
+            th0 = math.atan2(pts[0][1], pts[0][0])
+            uvs = []
+            for x, y, z in pts:
+                th = math.atan2(y, x)
+                th += 2 * math.pi * round((th0 - th) / (2 * math.pi))
+                uvs.append((th * math.hypot(x, y) * s, z * s))
+            out.append(uvs)
+    return out
+
+
 # ---- builders ----------------------------------------------------------------
 
 

@@ -45,7 +45,7 @@ def expand_stone_ring(spec: BuildingSpec, el: StoneRing, model: Model) -> None:
     pieces = max(1, round((a1 - a0) / 15.0))
     hulls = [g.annular_sector(R_out - t_w, R_out, a0 + (a1 - a0) * i / pieces, a0 + (a1 - a0) * (i + 1) / pieces, 1, 0.0, z_top) for i in range(pieces)]
     mat, nanite = _material(spec, el.type)
-    name = model.unique(f"{prefix}_{camel(el.id)}_WallStone", "Envelope", mesh, mat, hulls if t.collision else [], nanite, src_dict(t.src, type=el.type))
+    name = model.unique(f"{prefix}_{camel(el.id)}_WallStone", "Envelope", mesh, mat, hulls if t.collision else [], nanite, src_dict(t.src, type=el.type), uv="cylinder")
     model.place(Placement(f"{el.id}.wall", name, "Envelope", translation((cx, cy, z_f)), el.id, el.src.basis, el.src.confidence, src_dict(el.src, type=el.type)))
     model.points[el.id] = (cx, cy)
     model.points[f"{el.id}.start"] = (cx + r_mid * math.cos(math.radians(a0)), cy + r_mid * math.sin(math.radians(a0)))
@@ -76,7 +76,7 @@ def expand_round_mass(spec: BuildingSpec, el: RoundMass, model: Model) -> None:
     poly = [(r * math.cos(2 * math.pi * i / 32), r * math.sin(2 * math.pi * i / 32)) for i in range(32)]
     mesh = g.prism(poly, 0.0, _z(spec, el.top) - z_f)
     mat, nanite = _material(spec, el.type)
-    name = model.unique(f"{prefix}_{camel(el.id)}_RoundMass", "Envelope", mesh, mat, [mesh] if t.collision else [], nanite, src_dict(t.src, type=el.type))
+    name = model.unique(f"{prefix}_{camel(el.id)}_RoundMass", "Envelope", mesh, mat, [mesh] if t.collision else [], nanite, src_dict(t.src, type=el.type), uv="cylinder")
     model.place(Placement(f"{el.id}.mass", name, "Envelope", translation((cx, cy, z_f)), el.id, el.src.basis, el.src.confidence, src_dict(el.src, type=el.type)))
     model.points[el.id] = (cx, cy)
 
@@ -96,7 +96,7 @@ def expand_flue(spec: BuildingSpec, el: Flue, model: Model) -> None:
     cap = g.sphere(r_cap, 24, 12).transformed(lambda v: (v[0], v[1], v[2] + z_cap))
     mat, nanite = _material(spec, el.type)
     src = src_dict(el.src, type=el.type)
-    name = model.unique(f"{prefix}_{camel(el.id)}", "Roof", g.merge([pipe, cap]), mat, [pipe] if t.collision else [], nanite, src)
+    name = model.unique(f"{prefix}_{camel(el.id)}", "Roof", g.merge([pipe, cap]), mat, [pipe] if t.collision else [], nanite, src, uv="cylinder")
     model.place(Placement(f"{el.id}.flue", name, "Roof", translation((cx, cy, z_f)), el.id, el.src.basis, el.src.confidence, src))
     model.points[el.id] = (cx, cy)
 

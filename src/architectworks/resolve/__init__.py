@@ -14,6 +14,7 @@ from architectworks.resolve.elements import expand_flue, expand_link, expand_mem
 from architectworks.resolve.floors import build_floors
 from architectworks.resolve.pavilion import expand_pavilion
 from architectworks.resolve.roofs import expand_flat_roof
+from architectworks.site import resolve_site
 from architectworks.spec.model import BuildingSpec
 from architectworks.units import to_metres
 
@@ -62,6 +63,7 @@ def resolve(spec: BuildingSpec, *, marker: bool = True) -> dict[str, Any]:
     for el in sorted(spec.elements, key=lambda e: ORDER.get(e.pattern, 0)):
         EXPANDERS[el.pattern](spec, el, model)
     build_floors(spec, model)
+    site = resolve_site(spec, model.footprints)
 
     materials = {m.unreal: {"color": _hex_to_rgba(m.color, m.opacity), "translucent": m.translucent, **({"pattern": m.pattern} if m.pattern else {})} for m in spec.types.materials.values()}
     if marker:
@@ -97,6 +99,7 @@ def resolve(spec: BuildingSpec, *, marker: bool = True) -> dict[str, Any]:
         "derived": model.derived,
         "points": {k: [round(x, 6) + 0.0, round(y, 6) + 0.0] for k, (x, y) in sorted(model.points.items())},
         "open_items": [o.model_dump(mode="json", exclude_none=True) for o in spec.open_items],
+        **({"site": site} if site else {}),
     }
 
 

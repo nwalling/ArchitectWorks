@@ -178,10 +178,78 @@ def shingles(mat: bpy.types.Material, rgb: tuple[float, float, float]) -> None:
     bsdf.inputs["Roughness"].default_value = 0.85
 
 
-def make_materials(materials: dict) -> dict[str, bpy.types.Material]:
-    """Flat-colour placeholders, or a procedural pattern where the spec names
-    one. Spec colours are sRGB; Blender wants linear."""
+def textured(mat: bpy.types.Material, tex: dict, rgb: tuple[float, float, float]) -> None:
+    """Photographic texture set (colour, normal, roughness) at real-world
+    scale: the meshes' UVs are in metres, one repeat is ``tile_m``."""
+    nt = mat.node_tree
+    nodes, links = nt.nodes, nt.links
+    bsdf = nodes.get("Principled BSDF")
+    tc = nodes.new("ShaderNodeTexCoord")
+    mapping = nodes.new("ShaderNodeMapping")
+    k = 1.0 / tex["tile_m"]
+    mapping.inputs["Scale"].default_value = (k, k, k)
+    links.new(tc.outputs["UV"], mapping.inputs["Vector"])
+
+    def image(key: str, non_color: bool):
+        path = tex["maps"].get(key)
+        if not path:
+            return None
+        node = nodes.new("ShaderNodeTexImage")
+        node.image = bpy.data.images.load(path, check_existing=True)
+        if non_color:
+            node.image.colorspace_settings.name = "Non-Color"
+        links.new(mapping.outputs["Vector"], node.inputs["Vector"])
+        return node
+
+    diff, rough, nor = image("diff", False), image("rough", True), image("nor", True)
+    colour = diff.outputs["Color"]
+    if tex.get("tint", 0) > 0:
+        mix = nodes.new("ShaderNodeMix")
+        mix.data_type = "RGBA"
+        mix.blend_type = "COLOR"
+        mix.inputs["Factor"].default_value = tex["tint"]
+        links.new(colour, mix.inputs["A"])
+        mix.inputs["B"].default_value = (*rgb, 1.0)
+        colour = mix.outputs["Result"]
+    if abs(tex.get("value", 1.0) - 1.0) > 1e-6:
+        val = nodes.new("ShaderNodeMix")
+        val.data_type = "RGBA"
+        val.blend_type = "MULTIPLY"
+        val.inputs["Factor"].default_value = 1.0
+        links.new(colour, val.inputs["A"])
+        v = tex["value"]
+        val.inputs["B"].default_value = (v, v, v, 1.0)
+        colour = val.outputs["Result"]
+    if tex.get("macro"):
+        noise = nodes.new("ShaderNodeTexNoise")
+        noise.inputs["Scale"].default_value = 0.035
+        links.new(tc.outputs["UV"], noise.inputs["Vector"])
+        rng = nodes.new("ShaderNodeMapRange")
+        rng.inputs["To Min"].default_value = 0.72
+        rng.inputs["To Max"].default_value = 1.15
+        links.new(noise.outputs["Fac"], rng.inputs["Value"])
+        mul = nodes.new("ShaderNodeMix")
+        mul.data_type = "RGBA"
+        mul.blend_type = "MULTIPLY"
+        mul.inputs["Factor"].default_value = 1.0
+        links.new(colour, mul.inputs["A"])
+        links.new(rng.outputs["Result"], mul.inputs["B"])
+        colour = mul.outputs["Result"]
+    links.new(colour, bsdf.inputs["Base Color"])
+    if rough is not None:
+        links.new(rough.outputs["Color"], bsdf.inputs["Roughness"])
+    if nor is not None:
+        nmap = nodes.new("ShaderNodeNormalMap")
+        links.new(nor.outputs["Color"], nmap.inputs["Color"])
+        links.new(nmap.outputs["Normal"], bsdf.inputs["Normal"])
+
+
+def make_materials(materials: dict, assets: dict | None = None) -> dict[str, bpy.types.Material]:
+    """Photographic textures where they have been fetched, else a procedural
+    pattern where the spec names one, else flat colour. Spec colours are
+    sRGB; Blender wants linear."""
     out = {}
+    tex_for = (assets or {}).get("materials", {})
     for name, m in materials.items():
         mat = bpy.data.materials.new(name)
         r, g, b = (srgb_to_linear(c) for c in m["color"][:3])
@@ -198,6 +266,12 @@ def make_materials(materials: dict) -> dict[str, bpy.types.Material]:
             if m["translucent"]:
                 bsdf.inputs["Alpha"].default_value = a
             pattern = {"rubble": rubble, "shingles": shingles}.get(m.get("pattern"))
+            if name in tex_for:
+                try:
+                    textured(mat, tex_for[name], (r, g, b))
+                    pattern = None
+                except (KeyError, AttributeError, RuntimeError) as err:
+                    log(f"warning: texture for {name} not applied: {err}")
             if pattern is not None:
                 try:
                     pattern(mat, (r, g, b))
@@ -248,9 +322,9 @@ def add_exporter(coll: bpy.types.Collection, rel_path: str) -> None:
             log(f"warning: FBX setting {key} not applied: {err}")
 
 
-def build(resolved: dict, out_dir: str) -> dict:
+def build(resolved: dict, out_dir: str, assets: dict | None = None) -> dict:
     scene = reset_scene()
-    mats = make_materials(resolved["materials"])
+    mats = make_materials(resolved["materials"], assets)
 
     comp_root = new_collection(COMPONENTS, scene.collection)
     building = new_collection(BUILDING, scene.collection)
@@ -400,38 +474,41 @@ def render_preview(resolved: dict, out_dir: str, samples: int) -> str:
     cam.rotation_euler = (target - cam.location).to_track_quat("-Z", "Y").to_euler()
     scene.camera = cam
 
+    has_site = bpy.data.collections.get("SITE") is not None
     sun_data = bpy.data.lights.new("PreviewSun", "SUN")
     sun_data.energy = 2.2
     sun_data.angle = math.radians(3)
-    sun = bpy.data.objects.new("PreviewSun", sun_data)
-    sun.rotation_euler = (math.radians(48), math.radians(0), math.radians(140))
-    scene.collection.objects.link(sun)
+    if not has_site:
+        sun = bpy.data.objects.new("PreviewSun", sun_data)
+        sun.rotation_euler = (math.radians(48), math.radians(0), math.radians(140))
+        scene.collection.objects.link(sun)
 
-    ground = bpy.data.meshes.new("PreviewGround")
-    g0 = 6 * span
-    ground.from_pydata([(cx - g0, cy - g0, -0.11), (cx + g0, cy - g0, -0.11), (cx + g0, cy + g0, -0.11), (cx - g0, cy + g0, -0.11)], [], [(0, 1, 2, 3)])
-    gmat = bpy.data.materials.new("PreviewGround")
-    gmat.diffuse_color = (0.42, 0.40, 0.34, 1.0)
-    try:
-        gmat.use_nodes = True
-    except AttributeError:
-        pass
-    bsdf = gmat.node_tree.nodes.get("Principled BSDF") if gmat.node_tree else None
-    if bsdf is not None:
-        bsdf.inputs["Base Color"].default_value = (0.42, 0.40, 0.34, 1.0)
-    ground.materials.append(gmat)
-    scene.collection.objects.link(bpy.data.objects.new("PreviewGround", ground))
+    if not has_site:
+        ground = bpy.data.meshes.new("PreviewGround")
+        g0 = 6 * span
+        ground.from_pydata([(cx - g0, cy - g0, -0.11), (cx + g0, cy - g0, -0.11), (cx + g0, cy + g0, -0.11), (cx - g0, cy + g0, -0.11)], [], [(0, 1, 2, 3)])
+        gmat = bpy.data.materials.new("PreviewGround")
+        gmat.diffuse_color = (0.42, 0.40, 0.34, 1.0)
+        try:
+            gmat.use_nodes = True
+        except AttributeError:
+            pass
+        bsdf = gmat.node_tree.nodes.get("Principled BSDF") if gmat.node_tree else None
+        if bsdf is not None:
+            bsdf.inputs["Base Color"].default_value = (0.42, 0.40, 0.34, 1.0)
+        ground.materials.append(gmat)
+        scene.collection.objects.link(bpy.data.objects.new("PreviewGround", ground))
 
-    world = bpy.data.worlds.new("PreviewWorld")
-    scene.world = world
-    try:
-        world.use_nodes = True
-    except AttributeError:
-        pass
-    bg = world.node_tree.nodes.get("Background") if world.node_tree else None
-    if bg is not None:
-        bg.inputs["Color"].default_value = (0.78, 0.83, 0.88, 1.0)
-        bg.inputs["Strength"].default_value = 0.45
+        world = bpy.data.worlds.new("PreviewWorld")
+        scene.world = world
+        try:
+            world.use_nodes = True
+        except AttributeError:
+            pass
+        bg = world.node_tree.nodes.get("Background") if world.node_tree else None
+        if bg is not None:
+            bg.inputs["Color"].default_value = (0.78, 0.83, 0.88, 1.0)
+            bg.inputs["Strength"].default_value = 0.45
 
     scene.render.engine = "CYCLES"
     scene.cycles.device = "CPU"
@@ -442,8 +519,9 @@ def render_preview(resolved: dict, out_dir: str, samples: int) -> str:
         pass
     scene.render.resolution_x, scene.render.resolution_y = 1600, 1000
     scene.render.film_transparent = False
-    scene.view_settings.view_transform = "Standard"
-    scene.view_settings.exposure = -0.2
+    if not has_site:
+        scene.view_settings.view_transform = "Standard"
+        scene.view_settings.exposure = -0.2
     stem = os.path.join(out_dir, "preview", resolved["building"]["id"])
     scene.render.filepath = stem + ".png"
     bpy.ops.render.render(write_still=True)
@@ -469,6 +547,47 @@ def render_preview(resolved: dict, out_dir: str, samples: int) -> str:
     return stem + ".png"
 
 
+def render_site_shots(resolved: dict, out_dir: str, samples: int) -> list[str]:
+    """Eye-level shots from the two elevation sides and an aerial view over
+    the site, in the site's sky and sun."""
+    scene = bpy.context.scene
+    corners = building_corners()
+    xs, ys = [c.x for c in corners], [c.y for c in corners]
+    cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
+    span = max(max(xs) - min(xs), max(ys) - min(ys))
+    scene.render.film_transparent = False
+    scene.cycles.samples = samples
+    scene.render.resolution_x, scene.render.resolution_y = 1800, 1050
+    for ob in bpy.data.objects:
+        if "handedness" in ob.name.lower():
+            ob.hide_render = True
+    shots = {
+        # standing back from the face each drawn elevation shows
+        "site-southwest": (Vector((1.0, 0.25, 0.0)), 1.45, 1.7, 2.6, 32),
+        "site-northwest": (Vector((-0.25, -1.0, 0.0)), 1.45, 1.7, 2.4, 32),
+        "site-aerial": (Vector((0.9, -0.8, 0.0)), 1.9, 16.0, 1.0, 30),
+    }
+    out = []
+    for name, (direction, dist_f, eye_h, target_h, lens) in shots.items():
+        d = direction.normalized()
+        target = Vector((cx, cy, target_h))
+        loc = target + d * (span * dist_f)
+        loc.z = eye_h if eye_h < 5 else eye_h
+        data = bpy.data.cameras.new(name)
+        data.lens = lens
+        data.clip_end = 5000.0
+        cam = bpy.data.objects.new(name, data)
+        scene.collection.objects.link(cam)
+        cam.location = loc
+        cam.rotation_euler = (target - loc).to_track_quat("-Z", "Y").to_euler()
+        scene.camera = cam
+        path = os.path.join(out_dir, "preview", name + ".png")
+        scene.render.filepath = path
+        bpy.ops.render.render(write_still=True)
+        out.append(os.path.relpath(path, out_dir))
+    return out
+
+
 AXES = {"+X": (1.0, 0.0, 0.0), "-X": (-1.0, 0.0, 0.0), "+Y": (0.0, 1.0, 0.0), "-Y": (0.0, -1.0, 0.0)}
 
 
@@ -490,6 +609,9 @@ def render_elevations(resolved: dict, out_dir: str, looking: list[str], samples:
     if ground is not None:
         ground.hide_render = True
     test_pieces = [ob for ob in bpy.data.objects if "handedness" in ob.name.lower()]
+    site = bpy.data.collections.get("SITE")
+    if site is not None:
+        test_pieces += list(site.objects)
     for ob in test_pieces:
         ob.hide_render = True
     scene.render.film_transparent = True
@@ -621,6 +743,7 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--samples", type=int, default=48)
     ap.add_argument("--elevations", default="", help="also render orthographic elevations looking along these axes, e.g. -X,+Y")
     ap.add_argument("--no-verify", action="store_true")
+    ap.add_argument("--assets", default="", help="assets.json: fetched textures and plant models")
     args = ap.parse_args(argv)
 
     out_dir = os.path.abspath(args.out_dir)
@@ -629,11 +752,26 @@ def main(argv: list[str]) -> int:
         resolved = json.load(f)
 
     report = {"blender": bpy.app.version_string, "generator": resolved["generator"], "background": bpy.app.background}
-    report["build"] = build(resolved, out_dir)
+    assets = None
+    if args.assets:
+        with open(args.assets, encoding="utf-8") as f:
+            assets = json.load(f)
+    report["build"] = build(resolved, out_dir, assets)
     report["export"] = export_meshes(resolved, out_dir)
     report["preview_glb"] = os.path.relpath(export_preview_glb(resolved, out_dir), out_dir)
+    if args.preview and resolved.get("site"):
+        import importlib.util
+
+        spec_ = importlib.util.spec_from_file_location("aw_landscape", os.path.join(os.path.dirname(os.path.abspath(__file__)), "landscape.py"))
+        landscape = importlib.util.module_from_spec(spec_)
+        spec_.loader.exec_module(landscape)
+        mats = {m.name: m for m in bpy.data.materials}
+        report["site"] = landscape.build_site(resolved["site"], assets, mats, log)
+        bpy.ops.wm.save_as_mainfile(filepath=os.path.join(out_dir, "generated.blend"), relative_remap=True)
     if args.preview:
         report["preview_png"] = os.path.relpath(render_preview(resolved, out_dir, args.samples), out_dir)
+        if resolved.get("site"):
+            report["site_shots"] = render_site_shots(resolved, out_dir, args.samples)
         looking = [k for k in args.elevations.split(",") if k]
         if looking:
             report["elevations"] = render_elevations(resolved, out_dir, looking, args.samples)

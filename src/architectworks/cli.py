@@ -114,8 +114,39 @@ def cmd_compare_elevations(out: Path, report: dict) -> list[dict]:
     return results
 
 
-def cmd_blender(out: Path, preview: bool, samples: int) -> dict:
+ASSETS = REPO_ROOT / "assets" / "polyhaven"
+
+
+def cmd_assets(spec_path: Path) -> None:
+    from architectworks import assets
+
+    spec = load_spec(spec_path)
+    want = assets.wanted(spec)
+    print(f"fetching {len(want['textures'])} texture sets and {len(want['models'])} models from polyhaven.com (CC0) into {ASSETS}")
+    try:
+        idx = assets.fetch(spec, ASSETS)
+    except OSError as err:
+        raise SystemExit(f"could not fetch assets: {err}\nThe network may not allow api.polyhaven.com and dl.polyhaven.org.")
+    print(f"  done: {idx['downloaded_bytes'] / 1e6:.0f} MB downloaded; index {ASSETS / 'index.json'}")
+
+
+def write_assets(spec_path: Path, out: Path) -> Path | None:
+    """Local texture and model files for the Blender stage, if fetched."""
+    from architectworks import assets
+
+    found = assets.resolved_assets(load_spec(spec_path), ASSETS)
+    if not found:
+        return None
+    path = out / "assets.json"
+    path.write_text(json.dumps(found, indent=1) + "\n", encoding="utf-8")
+    print(f"  assets: {len(found['materials'])} textured materials, {len(found['models'])} plant models ({found['license']})")
+    return path
+
+
+def cmd_blender(out: Path, preview: bool, samples: int, assets_json: Path | None = None) -> dict:
     extra = ["--preview", "--samples", str(samples)] if preview else []
+    if assets_json is not None:
+        extra += ["--assets", str(assets_json)]
     looking = sorted({v["looking"] for f in elevation_fits(out) for v in f["views"].values()})
     if preview and looking:
         extra += ["--elevations", ",".join(looking)]
@@ -277,6 +308,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-marker", action="store_true")
     p.add_argument("--no-sheets", action="store_true", help="skip fitting and checking calibrated sheets")
 
+    p = sub.add_parser("assets", help="download the textures and plant models the spec names (polyhaven.com, CC0)")
+    p.add_argument("spec", type=Path)
+
     p = sub.add_parser("schema", help="print the Building Spec JSON Schema")
     p.add_argument("-o", "--out", type=Path)
 
@@ -302,6 +336,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--sheet", type=Path, help="the sheet image the draft was read from: score only the key's points from that sheet")
 
     args = ap.parse_args(argv)
+    if args.cmd == "assets":
+        cmd_assets(args.spec)
+        return 0
     if args.cmd == "detect":
         cmd_detect(args.sheet, args.out)
         return 0
@@ -329,7 +366,7 @@ def main(argv: list[str] | None = None) -> int:
     manifest = write_bundle(resolved, out)
     print(f"  Unreal manifest: {manifest}")
     if not args.no_blender:
-        cmd_blender(out, args.preview, args.samples)
+        cmd_blender(out, args.preview, args.samples, write_assets(args.spec, out))
         print(f"done: {out / 'generated.blend'} and {out / 'unreal'}")
     return 0
 

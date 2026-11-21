@@ -8,7 +8,7 @@ import string
 from dataclasses import dataclass, field
 from typing import Any
 
-from architectworks.geom.mesh import Mesh, bounds, box_uvs, is_closed, is_convex, volume
+from architectworks.geom.mesh import Mesh, bounds, box_uvs, is_closed, is_convex, radial_uvs, volume
 from architectworks.geom.xform import Matrix, rounded
 from architectworks.spec.model import Source
 
@@ -32,6 +32,10 @@ class Component:
     collision: list[Mesh]
     nanite: bool
     source: dict[str, Any]
+    uv: str = "box"  # box | cylinder | cone: see geom.mesh.radial_uvs
+
+    def uvs(self) -> list:
+        return box_uvs(self.mesh) if self.uv == "box" else radial_uvs(self.mesh, self.uv)
 
     def to_json(self) -> dict[str, Any]:
         bmin, bmax = bounds(self.mesh)
@@ -40,7 +44,7 @@ class Component:
             "category": self.category,
             "material_slots": [self.material],
             "nanite": self.nanite,
-            "mesh": {**self.mesh.to_json(), "uv": [[[round(u, 6) + 0.0, round(v, 6) + 0.0] for u, v in f] for f in box_uvs(self.mesh)]},
+            "mesh": {**self.mesh.to_json(), "uv": [[[round(u, 6) + 0.0, round(v, 6) + 0.0] for u, v in f] for f in self.uvs()], "uv_mode": self.uv},
             "collision": [c.to_json() for c in self.collision],
             "bounds": {"min": [round(c, 6) + 0.0 for c in bmin], "max": [round(c, 6) + 0.0 for c in bmax]},
             "volume_m3": round(volume(self.mesh), 6),
@@ -123,7 +127,7 @@ class Model:
             if not is_convex(hull):
                 raise ValueError(f"{name}: collision piece {i} is not convex")
 
-    def shared(self, prefix: str, base: str, category: str, mesh: Mesh, material: str, collision: list[Mesh], nanite: bool, source: dict) -> str:
+    def shared(self, prefix: str, base: str, category: str, mesh: Mesh, material: str, collision: list[Mesh], nanite: bool, source: dict, uv: str = "box") -> str:
         """Register geometry that many placements may share. Identical
         geometry under the same base name reuses one component; different
         geometry gets the next variant letter (_A, _B, ...)."""
@@ -135,14 +139,14 @@ class Model:
         name = f"{prefix}_{base}_{string.ascii_uppercase[len(variants)]}"
         self._validate(name, mesh, collision)
         variants.append((name, fp))
-        self.components[name] = Component(name, category, mesh, material, collision, nanite, source)
+        self.components[name] = Component(name, category, mesh, material, collision, nanite, source, uv)
         return name
 
-    def unique(self, name: str, category: str, mesh: Mesh, material: str, collision: list[Mesh], nanite: bool, source: dict) -> str:
+    def unique(self, name: str, category: str, mesh: Mesh, material: str, collision: list[Mesh], nanite: bool, source: dict, uv: str = "box") -> str:
         if name in self.components:
             raise ValueError(f"component {name} defined twice")
         self._validate(name, mesh, collision)
-        self.components[name] = Component(name, category, mesh, material, collision, nanite, source)
+        self.components[name] = Component(name, category, mesh, material, collision, nanite, source, uv)
         return name
 
     def place(self, placement: Placement) -> None:

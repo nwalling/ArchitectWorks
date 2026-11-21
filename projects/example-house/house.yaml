@@ -48,6 +48,9 @@ levels:
   t_o_lantern_living:
     elev: 109'-8"
     src: {sheet: elevations, basis: measured, confidence: low, quote: "FIXED GL.", note: "top of the beam over the living room's clerestory scales 109'-8\" on the SW elevation"}
+  fin_grade:
+    elev: 99'-7"
+    src: {sheet: elevations, basis: measured, confidence: low, quote: "FIN. GRADE", note: "about 5\" under the bedroom floor where the elevations letter it; it falls toward the landing (99'-2\") and the sunken music room"}
   t_o_flue_n:
     elev: 115'-3"
     src: {sheet: elevations, basis: measured, confidence: medium, quote: "FIREPLACE FLUE", note: "top of the ball scales 114'-11 3/4\" on the SW elevation and 115'-6\" on the NW (calibrated fits)"}
@@ -99,15 +102,16 @@ control:
 
 types:
   materials:
-    concrete: {unreal: M_Concrete, color: "#9a968c"}
-    stone_native: {unreal: M_StoneNative, color: "#8a7560", pattern: rubble}
-    roofing_built_up: {unreal: M_RoofBuiltUp, color: "#5e5852"}
+    concrete: {unreal: M_Concrete, color: "#9a968c", texture: {polyhaven: concrete_floor_worn_001}}
+    stone_native: {unreal: M_StoneNative, color: "#8a7560", pattern: rubble, texture: {polyhaven: stone_wall}}
+    roofing_built_up: {unreal: M_RoofBuiltUp, color: "#5e5852", texture: {polyhaven: gravel}}
+    ground_grass: {unreal: M_GroundGrass, color: "#c2a15e", texture: {polyhaven: grass_ground, macro: true, tint: 0.55, value: 1.2}}
     flue_metal: {unreal: M_MetalFlue, color: "#76797b"}
-    redwood: {unreal: M_Redwood, color: "#8b4a32"}
+    redwood: {unreal: M_Redwood, color: "#8b4a32", texture: {polyhaven: rough_wood, tint: 0.45}}
     glass: {unreal: M_Glass, color: "#9fc3cf", translucent: true, opacity: 0.25}
     steel: {unreal: M_SteelPainted, color: "#45484b"}
     door_frame_metal: {unreal: M_DoorFrame, color: "#3d3933"}
-    shingle: {unreal: M_ShingleComposition, color: "#4d4a47", pattern: shingles}
+    shingle: {unreal: M_ShingleComposition, color: "#4d4a47", pattern: shingles, texture: {polyhaven: roof_slates_02, tint: 0.4, value: 0.38}}
     acrylic: {unreal: M_Acrylic, color: "#dcecf1", translucent: true, opacity: 0.22}
 
   profiles:
@@ -758,6 +762,40 @@ elements:
     frame: door_frame
     header: {type: header_6x6, top: t_o_header}
     src: {sheet: foundation, basis: rule, confidence: medium, note: glazing drawn between these two points}
+
+site:
+  location: {latitude: 38.5, longitude: -122.7, utc_offset: -7, note: "Northern California (owner); there is no site plan, so the exact spot is nominal"}
+  true_north: 225deg
+  grade: fin_grade
+  terrain:
+    pad: 10'-0"
+    blend: 30'-0"
+    extent: 450'-0"
+    relief: 5'-0"
+    wavelength: 140'-0"
+    fall: 225deg
+    grade: 0.04
+    hills: 220'-0"
+    seed: 7
+    ground: ground_grass
+  planting:
+    - {polyhaven: island_tree_01, count: 5, near: 35'-0", far: 260'-0", spacing: 45'-0", scale: [1.8, 2.6], note: "broadleaf stand-in for valley and coast live oaks; the model is about 16 ft tall, so scaled up"}
+    - {polyhaven: island_tree_02, count: 5, near: 40'-0", far: 300'-0", spacing: 45'-0", scale: [1.8, 2.6]}
+    - {polyhaven: island_tree_03, count: 4, near: 45'-0", far: 300'-0", spacing: 45'-0", scale: [1.8, 2.6]}
+    - {polyhaven: tree_small_02, count: 6, near: 25'-0", far: 160'-0", spacing: 30'-0", scale: [1.3, 1.8]}
+    - {polyhaven: island_tree_01, count: 22, near: 300'-0", far: 1600'-0", spacing: 60'-0", scale: [1.8, 2.8], note: oaks scattered over the hills}
+    - {polyhaven: island_tree_02, count: 22, near: 300'-0", far: 1600'-0", spacing: 60'-0", scale: [1.8, 2.8]}
+    - {polyhaven: fir_tree_01, count: 30, near: 220'-0", far: 700'-0", spacing: 35'-0", scale: [0.9, 1.5], note: Douglas fir stand-in on the far slopes}
+    - {polyhaven: shrub_01, count: 22, near: 9'-0", far: 90'-0", spacing: 6'-0", scale: [2.5, 4.0], note: "manzanita and coyote brush stand-ins; scaled up from small ground plants"}
+    - {polyhaven: shrub_02, count: 22, near: 9'-0", far: 90'-0", spacing: 6'-0", scale: [2.5, 4.0]}
+    - {polyhaven: shrub_04, count: 16, near: 9'-0", far: 120'-0", spacing: 6'-0", scale: [2.5, 4.0]}
+    - {polyhaven: grass_medium_01, count: 7000, near: 4'-0", far: 120'-0", scale: [1.6, 2.6], note: bunch grass; the ground texture is dry summer grass}
+    - {polyhaven: grass_medium_02, count: 5000, near: 4'-0", far: 120'-0", scale: [0.7, 1.2]}
+    - {polyhaven: boulder_01, count: 5, near: 25'-0", far: 220'-0", spacing: 30'-0", scale: [0.5, 1.0]}
+    - {polyhaven: rock_07, count: 8, near: 15'-0", far: 180'-0", spacing: 15'-0"}
+    - {polyhaven: rock_09, count: 8, near: 15'-0", far: 180'-0", spacing: 15'-0"}
+  sun: {date: "2026-09-20", time: "16:30"}
+  src: {basis: assumed, note: "no site plan: the ground falls to the north as the elevations' grade lines do; beyond the graded pad, the terrain, the oaks, firs, shrubs and grass are an invented Northern California oak savanna. Textures and models from polyhaven.com (CC0)"}
 
 floors:
   gap_fill: 5'-0"

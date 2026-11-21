@@ -256,7 +256,7 @@ def _stone_arcs(c: Ctx, arcs, col_outer: float) -> list[float]:
         hulls = [g.annular_sector(R_in, R_out, a0 + (a1 - a0) * j / seg, a0 + (a1 - a0) * min(j + per, seg) / seg, 1, 0.0, z_m) for j in range(0, seg, per)]
         mat, nanite = c.material(wall_t)
         suffix = "" if len(arcs) == 1 else str(i)
-        name = model.unique(f"{c.prefix}_{camel(el.id)}_WallStoneArc{suffix}", "Envelope", mesh, mat, hulls if wall_t.collision else [], nanite, c.tsrc(a.type))
+        name = model.unique(f"{c.prefix}_{camel(el.id)}_WallStoneArc{suffix}", "Envelope", mesh, mat, hulls if wall_t.collision else [], nanite, c.tsrc(a.type), uv="cylinder")
         ws = a.src or wall_t.src
         c.place(f"wall.arc{suffix}", name, rotation_z(0.0), ws.basis, ws.confidence, src_dict(ws, type=a.type))
         model.points[f"{el.id}.arc{i}.start"] = c.world_xy(g.polar(r_mid, a0))
@@ -463,7 +463,7 @@ def _roof(c: Ctx, G: list[int], glazed_vertices: list[int], rest: tuple[float, f
     mat, nanite = c.material(sh_t)
     cone_name = model.unique(
         f"{c.prefix}_{camel(eid)}_RoofConical", "Roof", g.merge(cone_meshes), mat, [h for h in cone_hulls if g.is_convex(h, 1e-6)] if sh_t.collision else [], nanite, c.tsrc(roof.conical.type)
-    )
+    , uv="cone")
     cs = roof.conical.src
     c.place("roof_conical", cone_name, rotation_z(0.0), cs.basis, cs.confidence, src_dict(cs, type=roof.conical.type, note=f"slope {slope_basis}"))
 
@@ -488,12 +488,12 @@ def _roof(c: Ctx, G: list[int], glazed_vertices: list[int], rest: tuple[float, f
         ev_src = src_dict(ev.src)
         if fas_meshes:
             mat, nanite = c.material(fas_t)
-            name = model.unique(f"{c.prefix}_{camel(eid)}_Fascia", "Roof", g.merge(fas_meshes), mat, [], nanite, c.tsrc(ev.fascia))
+            name = model.unique(f"{c.prefix}_{camel(eid)}_Fascia", "Roof", g.merge(fas_meshes), mat, [], nanite, c.tsrc(ev.fascia), uv="cylinder")
             c.place("fascia", name, rotation_z(0.0), ev.src.basis, ev.src.confidence, ev_src)
         if fri_meshes:
             fri_t = c.ctype(ev.frieze)
             mat, nanite = c.material(fri_t)
-            name = model.unique(f"{c.prefix}_{camel(eid)}_Frieze", "Envelope", g.merge(fri_meshes), mat, [], nanite, c.tsrc(ev.frieze))
+            name = model.unique(f"{c.prefix}_{camel(eid)}_Frieze", "Envelope", g.merge(fri_meshes), mat, [], nanite, c.tsrc(ev.frieze), uv="cylinder")
             c.place("frieze", name, rotation_z(0.0), ev.src.basis, ev.src.confidence, ev_src)
 
     # ---- rafters ----
@@ -530,7 +530,7 @@ def _roof(c: Ctx, G: list[int], glazed_vertices: list[int], rest: tuple[float, f
         sill_mesh = g.annular_sector(R_wc - w_s / 2, R_wc + w_s / 2, a0, a1, segments_for(a1 - a0, a.segments_per_90), tops[i], tops[i] + d_s)
         s_mat, s_nan = c.material(sill_t)
         suffix = "" if len(arcs) == 1 else str(i)
-        sill_name = model.unique(f"{c.prefix}_{camel(eid)}_Sill{suffix}", "Structure", sill_mesh, s_mat, [], s_nan, c.tsrc(roof.sill.type))
+        sill_name = model.unique(f"{c.prefix}_{camel(eid)}_Sill{suffix}", "Structure", sill_mesh, s_mat, [], s_nan, c.tsrc(roof.sill.type), uv="cylinder")
         c.place(f"sill{suffix}", sill_name, rotation_z(0.0), sill_t.src.basis, sill_t.src.confidence, c.tsrc(roof.sill.type))
 
     # ---- compression ring and skylight ----
@@ -542,7 +542,7 @@ def _roof(c: Ctx, G: list[int], glazed_vertices: list[int], rest: tuple[float, f
     mat, nanite = c.material(ring_t)
     # the band runs on up through the roofing as the skylight's curb
     z_band = z_rt + (t_v + to_metres(ring.curb) if ring.curb else 0.0)
-    ring_name = model.unique(f"{c.prefix}_{camel(eid)}_CompressionRing", "Structure", g.ring(r_ring - w_ring, r_ring, z_rt - d_ring, z_band, 48), mat, [], nanite, c.tsrc(ring.type))
+    ring_name = model.unique(f"{c.prefix}_{camel(eid)}_CompressionRing", "Structure", g.ring(r_ring - w_ring, r_ring, z_rt - d_ring, z_band, 48), mat, [], nanite, c.tsrc(ring.type), uv="cylinder")
     ring_src = c.spec.levels[ring.top].src if ring.top else (ring.src or ring_t.src)
     c.place("ring", ring_name, rotation_z(0.0), "rule", ring_src.confidence, src_dict(ring_src, note=ring_basis))
     if roof.skylight is not None:
