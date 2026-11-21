@@ -65,6 +65,18 @@ def cmd_sheets(spec_path: Path, spec, resolved: dict, out: Path) -> list[dict]:
     return reports
 
 
+def quiet_texture_search(text: str) -> str:
+    """Blender's FBX importer looks for each texture beside the FBX and logs
+    every folder it fails to open. The re-import check compares geometry
+    only, so those lines are counted, not kept."""
+    lines = text.splitlines()
+    kept = [ln for ln in lines if not ln.startswith("Failed to open dir")]
+    dropped = len(lines) - len(kept)
+    if dropped:
+        kept.append(f"({dropped} 'Failed to open dir' lines from the FBX importer's texture search left out)")
+    return "\n".join(kept)
+
+
 def cmd_resolve(spec_path: Path, out: Path, marker: bool = True, sheets: bool = True) -> dict:
     spec = load_spec(spec_path)
     resolved = resolve(spec, marker=marker)
@@ -154,7 +166,7 @@ def cmd_blender(out: Path, preview: bool, samples: int, assets_json: Path | None
     print("running:", " ".join(cmd))
     proc = subprocess.run(cmd, capture_output=True, text=True)
     log = out / "blender.log"
-    log.write_text(proc.stdout + "\n--- stderr ---\n" + proc.stderr, encoding="utf-8")
+    log.write_text(quiet_texture_search(proc.stdout) + "\n--- stderr ---\n" + quiet_texture_search(proc.stderr), encoding="utf-8")
     report_path = out / "blender_report.json"
     if not report_path.exists():
         print(proc.stdout[-4000:], proc.stderr[-4000:], sep="\n")

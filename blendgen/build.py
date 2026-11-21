@@ -42,7 +42,10 @@ FBX_SETTINGS = {
     "add_leaf_bones": False,
     "bake_anim": False,
     "embed_textures": False,
-    "path_mode": "AUTO",
+    # texture file names only: an absolute path into this machine's assets
+    # folder means nothing where Unreal runs, and would make the FBX bytes
+    # depend on where the repo is checked out
+    "path_mode": "STRIP",
 }
 COMPONENTS = "AW_COMPONENTS"
 BUILDING = "BUILDING"
@@ -221,20 +224,34 @@ def textured(mat: bpy.types.Material, tex: dict, rgb: tuple[float, float, float]
         val.inputs["B"].default_value = (v, v, v, 1.0)
         colour = val.outputs["Result"]
     if tex.get("macro"):
-        noise = nodes.new("ShaderNodeTexNoise")
-        noise.inputs["Scale"].default_value = 0.035
-        links.new(tc.outputs["UV"], noise.inputs["Vector"])
-        rng = nodes.new("ShaderNodeMapRange")
-        rng.inputs["To Min"].default_value = 0.72
-        rng.inputs["To Max"].default_value = 1.15
-        links.new(noise.outputs["Fac"], rng.inputs["Value"])
+        # one repeat of a photo is a couple of metres; from across a field
+        # it averages to one flat colour. Two noises break that up: a
+        # brightness swell every 30 m or so, and darker, greener patches
+        # (shade, scrub, damper ground) at about the scale of a hillside.
+        def noise(scale: float, lo: float, hi: float, to_lo: float, to_hi: float):
+            n = nodes.new("ShaderNodeTexNoise")
+            n.inputs["Scale"].default_value = scale
+            links.new(tc.outputs["UV"], n.inputs["Vector"])
+            r = nodes.new("ShaderNodeMapRange")
+            r.inputs["From Min"].default_value, r.inputs["From Max"].default_value = lo, hi
+            r.inputs["To Min"].default_value, r.inputs["To Max"].default_value = to_lo, to_hi
+            links.new(n.outputs["Fac"], r.inputs["Value"])
+            return r.outputs["Result"]
+
         mul = nodes.new("ShaderNodeMix")
         mul.data_type = "RGBA"
         mul.blend_type = "MULTIPLY"
         mul.inputs["Factor"].default_value = 1.0
         links.new(colour, mul.inputs["A"])
-        links.new(rng.outputs["Result"], mul.inputs["B"])
+        links.new(noise(0.035, 0.0, 1.0, 0.72, 1.15), mul.inputs["B"])
         colour = mul.outputs["Result"]
+        patch = nodes.new("ShaderNodeMix")
+        patch.data_type = "RGBA"
+        patch.blend_type = "MULTIPLY"
+        links.new(noise(0.012, 0.42, 0.68, 0.0, 0.8), patch.inputs["Factor"])
+        links.new(colour, patch.inputs["A"])
+        patch.inputs["B"].default_value = (0.42, 0.46, 0.26, 1.0)
+        colour = patch.outputs["Result"]
     links.new(colour, bsdf.inputs["Base Color"])
     if rough is not None:
         links.new(rough.outputs["Color"], bsdf.inputs["Roughness"])
@@ -547,32 +564,44 @@ def render_preview(resolved: dict, out_dir: str, samples: int) -> str:
     return stem + ".png"
 
 
-def render_site_shots(resolved: dict, out_dir: str, samples: int) -> list[str]:
-    """Eye-level shots from the two elevation sides and an aerial view over
-    the site, in the site's sky and sun."""
-    scene = bpy.context.scene
+SITE_SHOTS = {
+    # name: (plan direction from the building, distance in building spans,
+    #        eye height m, aim height m, lens mm). The first two stand back
+    #        from the faces the drawn elevations show; the last looks down.
+    "site-southwest": ((1.0, 0.25), 1.45, 1.7, 2.6, 32),
+    "site-northwest": ((-0.25, -1.0), 1.45, 1.7, 2.4, 32),
+    "site-aerial": ((0.9, -0.8), 1.9, 16.0, 1.0, 30),
+}
+
+
+def site_cameras() -> dict[str, tuple[Vector, Vector, float, float]]:
+    """name -> (location, target, lens, half the building's span), from the
+    built geometry."""
     corners = building_corners()
     xs, ys = [c.x for c in corners], [c.y for c in corners]
     cx, cy = (min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2
     span = max(max(xs) - min(xs), max(ys) - min(ys))
+    out = {}
+    for name, ((dx, dy), dist_f, eye_h, target_h, lens) in SITE_SHOTS.items():
+        target = Vector((cx, cy, target_h))
+        loc = target + Vector((dx, dy, 0.0)).normalized() * (span * dist_f)
+        loc.z = eye_h
+        out[name] = (loc, target, lens, span / 2)
+    return out
+
+
+def render_site_shots(resolved: dict, out_dir: str, samples: int) -> list[str]:
+    """Eye-level shots from the two elevation sides and an aerial view over
+    the site, in the site's sky and sun."""
+    scene = bpy.context.scene
     scene.render.film_transparent = False
     scene.cycles.samples = samples
     scene.render.resolution_x, scene.render.resolution_y = 1800, 1050
     for ob in bpy.data.objects:
         if "handedness" in ob.name.lower():
             ob.hide_render = True
-    shots = {
-        # standing back from the face each drawn elevation shows
-        "site-southwest": (Vector((1.0, 0.25, 0.0)), 1.45, 1.7, 2.6, 32),
-        "site-northwest": (Vector((-0.25, -1.0, 0.0)), 1.45, 1.7, 2.4, 32),
-        "site-aerial": (Vector((0.9, -0.8, 0.0)), 1.9, 16.0, 1.0, 30),
-    }
     out = []
-    for name, (direction, dist_f, eye_h, target_h, lens) in shots.items():
-        d = direction.normalized()
-        target = Vector((cx, cy, target_h))
-        loc = target + d * (span * dist_f)
-        loc.z = eye_h if eye_h < 5 else eye_h
+    for name, (loc, target, lens, _) in site_cameras().items():
         data = bpy.data.cameras.new(name)
         data.lens = lens
         data.clip_end = 5000.0
@@ -766,7 +795,9 @@ def main(argv: list[str]) -> int:
         landscape = importlib.util.module_from_spec(spec_)
         spec_.loader.exec_module(landscape)
         mats = {m.name: m for m in bpy.data.materials}
-        report["site"] = landscape.build_site(resolved["site"], assets, mats, log)
+        # keep the eye-level shots' foregrounds clear of shrubs and trees
+        views = [((loc.x, loc.y), (tgt.x, tgt.y), half) for loc, tgt, _, half in site_cameras().values() if loc.z < 5.0]
+        report["site"] = landscape.build_site(resolved["site"], assets, mats, log, views=views)
         bpy.ops.wm.save_as_mainfile(filepath=os.path.join(out_dir, "generated.blend"), relative_remap=True)
     if args.preview:
         report["preview_png"] = os.path.relpath(render_preview(resolved, out_dir, args.samples), out_dir)

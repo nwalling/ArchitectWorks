@@ -105,7 +105,7 @@ types:
     concrete: {unreal: M_Concrete, color: "#9a968c", texture: {polyhaven: concrete_floor_worn_001}}
     stone_native: {unreal: M_StoneNative, color: "#8a7560", pattern: rubble, texture: {polyhaven: stone_wall}}
     roofing_built_up: {unreal: M_RoofBuiltUp, color: "#5e5852", texture: {polyhaven: gravel}}
-    ground_grass: {unreal: M_GroundGrass, color: "#c2a15e", texture: {polyhaven: grass_ground, macro: true, tint: 0.55, value: 1.2}}
+    ground_grass: {unreal: M_GroundGrass, color: "#c9a24a", texture: {polyhaven: withered_grass, macro: true, tint: 0.75, value: 0.65}}  # late-summer golden grass
     flue_metal: {unreal: M_MetalFlue, color: "#76797b"}
     redwood: {unreal: M_Redwood, color: "#8b4a32", texture: {polyhaven: rough_wood, tint: 0.45}}
     glass: {unreal: M_Glass, color: "#9fc3cf", translucent: true, opacity: 0.25}
@@ -783,14 +783,15 @@ site:
     - {polyhaven: island_tree_02, count: 5, near: 40'-0", far: 300'-0", spacing: 45'-0", scale: [1.8, 2.6]}
     - {polyhaven: island_tree_03, count: 4, near: 45'-0", far: 300'-0", spacing: 45'-0", scale: [1.8, 2.6]}
     - {polyhaven: tree_small_02, count: 6, near: 25'-0", far: 160'-0", spacing: 30'-0", scale: [1.3, 1.8]}
-    - {polyhaven: island_tree_01, count: 22, near: 300'-0", far: 1600'-0", spacing: 60'-0", scale: [1.8, 2.8], note: oaks scattered over the hills}
-    - {polyhaven: island_tree_02, count: 22, near: 300'-0", far: 1600'-0", spacing: 60'-0", scale: [1.8, 2.8]}
-    - {polyhaven: fir_tree_01, count: 30, near: 220'-0", far: 700'-0", spacing: 35'-0", scale: [0.9, 1.5], note: Douglas fir stand-in on the far slopes}
+    - {polyhaven: island_tree_01, count: 50, near: 300'-0", far: 1600'-0", spacing: 50'-0", scale: [1.8, 2.8], note: oaks scattered over the hills}
+    - {polyhaven: island_tree_02, count: 50, near: 300'-0", far: 1600'-0", spacing: 50'-0", scale: [1.8, 2.8]}
+    - {polyhaven: island_tree_03, count: 35, near: 300'-0", far: 1600'-0", spacing: 50'-0", scale: [1.8, 2.8]}
+    - {polyhaven: fir_tree_01, count: 45, near: 220'-0", far: 900'-0", spacing: 35'-0", scale: [0.9, 1.5], note: Douglas fir stand-in on the far slopes}
     - {polyhaven: shrub_01, count: 22, near: 9'-0", far: 90'-0", spacing: 6'-0", scale: [2.5, 4.0], note: "manzanita and coyote brush stand-ins; scaled up from small ground plants"}
     - {polyhaven: shrub_02, count: 22, near: 9'-0", far: 90'-0", spacing: 6'-0", scale: [2.5, 4.0]}
     - {polyhaven: shrub_04, count: 16, near: 9'-0", far: 120'-0", spacing: 6'-0", scale: [2.5, 4.0]}
-    - {polyhaven: grass_medium_01, count: 7000, near: 4'-0", far: 120'-0", scale: [1.6, 2.6], note: bunch grass; the ground texture is dry summer grass}
-    - {polyhaven: grass_medium_02, count: 5000, near: 4'-0", far: 120'-0", scale: [0.7, 1.2]}
+    - {polyhaven: grass_medium_01, count: 12000, near: 4'-0", far: 200'-0", scale: [1.6, 2.6], controls: {Dead Amount: 0.85}, note: "bunch grass, gone to straw by September (the model's own dead-grass texture)"}
+    - {polyhaven: grass_medium_02, count: 14000, near: 4'-0", far: 120'-0", scale: [0.8, 1.4], controls: {Dead Amount: 0.7}}
     - {polyhaven: boulder_01, count: 5, near: 25'-0", far: 220'-0", spacing: 30'-0", scale: [0.5, 1.0]}
     - {polyhaven: rock_07, count: 8, near: 15'-0", far: 180'-0", spacing: 15'-0"}
     - {polyhaven: rock_09, count: 8, near: 15'-0", far: 180'-0", spacing: 15'-0"}

@@ -520,6 +520,7 @@ class SitePlanting(Strict):
     far: Length = Field(description="farthest from the building")
     scale: tuple[float, float] = (0.8, 1.2)
     spacing: Length = Field(Fraction(0), description="least distance between two of these")
+    controls: dict[str, float] = Field(default_factory=dict, description="values for the model's own material controls, by input name (Poly Haven's grasses have 'Dead Amount', 0 green to 1 straw)")
     note: str | None = None
 
 

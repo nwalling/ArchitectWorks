@@ -133,14 +133,21 @@ What the comparison still shows: the model's music room sits about 2'-0" further
 
 The previews can now show the house textured, in a landscape. There is no site plan, so the landscape is invented, and the spec's `site` section says so (basis `assumed`).
 
-- **Textures.** Each material can name a photographic texture set from [Poly Haven](https://polyhaven.com) (CC0): rubble stone (`stone_wall`), redwood (`rough_wood`, tinted toward redwood), shingles (`roof_slates_02`, darkened toward composition shingles), worn concrete, gravel on the built-up roofs, and dry grass for the ground. Texture coordinates are in metres at true scale. Conical roofs are mapped so shingle courses run level round them, and curved stone wraps round its wall instead of stretching.
+- **Textures.** Each material can name a photographic texture set from [Poly Haven](https://polyhaven.com) (CC0): rubble stone (`stone_wall`), redwood (`rough_wood`, tinted toward redwood), shingles (`roof_slates_02`, darkened toward composition shingles), worn concrete, gravel on the built-up roofs, and withered grass for the ground. The ground gets large, slow patches of light and dark, because a 2 m photo repeated across a hillside averages to one flat colour. Texture coordinates are in metres at true scale. Conical roofs are mapped so shingle courses run level round them, and curved stone wraps round its wall instead of stretching.
 - **What comes from the drawings.** Finished grade is 99'-7" (the elevations' FIN. GRADE line, about 5" under the bedroom floor). The ground falls to the north, as their grade lines fall toward the landing and the sunken music room. True north comes from the roof plan's arrow, and it agrees with which way each elevation looks.
-- **What is invented.** The landscape is Northern California oak savanna: rolling golden grassland beyond a level pad, hills on the horizon, oaks (broadleaf stand-ins scaled up), firs on the far slopes, shrubs, bunch grass and boulders. The sun is placed for 38.5° N on 20 September at 4:30 pm, over the glazed south-west side.
+- **What is invented.** The landscape is Northern California oak savanna: rolling golden grassland beyond a level pad, hills on the horizon, oaks (broadleaf stand-ins scaled up), firs on the far slopes, shrubs, bunch grass and boulders. The grass is Poly Haven's bunch grass with its own *Dead Amount* control turned most of the way up, because nothing in a Northern California September is green except the trees and the people who forgot to water. The sun is placed for 38.5° N on 20 September at 4:30 pm, over the glazed south-west side.
+- **Composition.** Trees, shrubs and rocks keep out of the wedge between each eye-level camera and the house, the way an architectural photographer stands somewhere the oak isn't. Grass doesn't, and it thins out toward the edge of its band instead of stopping at a line you could trip over from the air.
 
 ```bash
 aw assets projects/example-house/house.yaml   # about 750 MB, checked against Poly Haven's md5s, into assets/ (git-ignored)
 aw build projects/example-house/house.yaml --preview
 ```
+
+| From the south-west | From the north-west |
+| --- | --- |
+| ![South-west](docs/site/site-southwest.jpg) | ![North-west](docs/site/site-northwest.jpg) |
+
+![From the air](docs/site/site-aerial.jpg)
 
 Without the download everything still builds, with flat or procedural materials. The site never goes to Unreal's FBX set: Unreal should build its own landscape and foliage from the same `site` data.
 

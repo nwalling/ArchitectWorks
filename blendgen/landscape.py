@@ -122,9 +122,27 @@ def sample_height(T: Terrain, x: np.ndarray, y: np.ndarray) -> np.ndarray:
     return (z00 * (1 - fx) + z10 * fx) * (1 - fy) + (z01 * (1 - fx) + z11 * fx) * fy
 
 
-def scatter(T: Terrain, plant: dict, seed: int) -> np.ndarray:
+def in_view(px, py, views) -> np.ndarray:
+    """Points between a camera and the building it looks at: inside the
+    wedge from the camera (1.5 m wide there) to the building's span (plus
+    3 m) at the target. ``views`` is [((cx, cy), (tx, ty), half_span)]."""
+    hit = np.zeros(np.shape(px), bool)
+    for (cx, cy), (tx, ty), half in views or []:
+        ux, uy = tx - cx, ty - cy
+        L = math.hypot(ux, uy) or 1e-9
+        ux, uy = ux / L, uy / L
+        along = (px - cx) * ux + (py - cy) * uy
+        side = np.abs(-(px - cx) * uy + (py - cy) * ux)
+        hit |= (along > -2.0) & (along < L) & (side < 1.5 + (half + 3.0) * np.clip(along, 0, None) / L)
+    return hit
+
+
+def scatter(T: Terrain, plant: dict, seed: int, views=None) -> np.ndarray:
     """Points (x, y) between ``near`` and ``far`` from the outline, at least
-    ``spacing`` apart; returns as many as fit, up to ``count``."""
+    ``spacing`` apart; returns as many as fit, up to ``count``. Spaced
+    plants (trees, shrubs, rocks) keep out of the ``views`` (see in_view);
+    ground cover, which has no spacing, does not, but thins out toward the
+    far edge of its band."""
     rng = np.random.default_rng(seed)
     R = plant["far_m"] + T.R0
     want, sp = plant["count"], plant["spacing_m"]
@@ -133,7 +151,15 @@ def scatter(T: Terrain, plant: dict, seed: int) -> np.ndarray:
         n = max(64, (want - len(out)) * 6)
         p = np.stack([T.cx + rng.uniform(-R, R, n), T.cy + rng.uniform(-R, R, n)], 1)
         d = _seg_distance(p[:, 0], p[:, 1], T.site["outline"])
-        p = p[(d >= plant["near_m"]) & (d <= plant["far_m"])]
+        band = (d >= plant["near_m"]) & (d <= plant["far_m"])
+        p, d = p[band], d[band]
+        if sp <= 0:
+            # ground cover thins out over the outer part of its band rather
+            # than stopping along a line
+            near, far = plant["near_m"], plant["far_m"]
+            p = p[rng.uniform(0, 1, len(p)) < 1.0 - _smoothstep(near + 0.5 * (far - near), far, d)]
+        if sp > 0 and views:
+            p = p[~in_view(p[:, 0], p[:, 1], views)]
         if sp > 0:
             keep = []
             for q in p:
@@ -178,7 +204,28 @@ def _instancer_tree(name: str, source) -> bpy.types.NodeTree:
     return ng
 
 
-def plant(T: Terrain, coll, sources_parent, model_blend: str, spec: dict, seed: int, log) -> int:
+def set_controls(source, controls: dict) -> list[str]:
+    """Set the model's own material controls: unlinked inputs of the node
+    groups in its materials, by name. Returns the inputs set."""
+    done, hit = set(), []
+    for ob in source.all_objects:
+        for slot in getattr(ob, "material_slots", []):
+            mat = slot.material
+            if mat is None or mat.name in done or mat.node_tree is None:
+                continue
+            done.add(mat.name)
+            for node in mat.node_tree.nodes:
+                if node.type != "GROUP":
+                    continue
+                for name, value in controls.items():
+                    sock = node.inputs.get(name)
+                    if sock is not None and not sock.is_linked:
+                        sock.default_value = value
+                        hit.append(f"{mat.name}.{name}")
+    return hit
+
+
+def plant(T: Terrain, coll, sources_parent, model_blend: str, spec: dict, seed: int, log, views=None) -> int:
     mid = spec["polyhaven"]
     with bpy.data.libraries.load(model_blend, link=False) as (src, dst):
         want = next((c for c in (f"{mid}_LOD0", f"{mid}_static", mid) if c in src.collections), None)
@@ -188,9 +235,13 @@ def plant(T: Terrain, coll, sources_parent, model_blend: str, spec: dict, seed: 
         dst.collections = [want]
     source = dst.collections[0]
     source.name = f"SITE_SRC_{mid}"
+    if spec.get("controls"):
+        hit = set_controls(source, spec["controls"])
+        if not hit:
+            log(f"site: {mid} has no material inputs named {sorted(spec['controls'])}")
     sources_parent.children.link(source)
     variants = len(source.objects)
-    pts = scatter(T, spec, seed)
+    pts = scatter(T, spec, seed, views)
     if len(pts) == 0:
         return 0
     rng = np.random.default_rng(seed + 1)
@@ -256,7 +307,7 @@ def set_sky(site: dict, strength: float = 0.12):
     return lamp
 
 
-def build_site(site: dict, assets: dict | None, materials: dict, log) -> dict:
+def build_site(site: dict, assets: dict | None, materials: dict, log, views=None) -> dict:
     scene = bpy.context.scene
     coll = bpy.data.collections.new(SITE)
     scene.collection.children.link(coll)
@@ -271,7 +322,7 @@ def build_site(site: dict, assets: dict | None, materials: dict, log) -> dict:
         if not blend:
             counts[p["polyhaven"]] = "not fetched"
             continue
-        counts[p["polyhaven"]] = plant(T, coll, sources, blend, p, site["terrain"]["seed"] * 1000 + k, log)
+        counts[p["polyhaven"]] = plant(T, coll, sources, blend, p, site["terrain"]["seed"] * 1000 + k, log, views)
     make_paths_absolute()
     for lc in bpy.context.view_layer.layer_collection.children:
         if lc.name == "SITE_SOURCES":

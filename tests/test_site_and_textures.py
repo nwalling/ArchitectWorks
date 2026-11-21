@@ -97,7 +97,7 @@ def test_curved_walls_wrap(house):
 def test_spec_names_textures_and_plants(spec):
     want = assets.wanted(spec)
     ids = {t for t, _ in want["textures"]}
-    assert {"stone_wall", "roof_slates_02", "grass_ground", "rough_wood"} <= ids
+    assert {"stone_wall", "roof_slates_02", "withered_grass", "rough_wood"} <= ids
     assert "island_tree_01" in want["models"] and "fir_tree_01" in want["models"]
 
 
@@ -157,3 +157,38 @@ def test_terrain_pad_and_planting_bands(house, landscape):
     assert len(pts) == 12 and d.min() >= 10.0 and d.max() <= 60.0
     gaps = np.hypot(*(pts[:, None, :] - pts[None, :, :]).transpose(2, 0, 1)) + np.eye(len(pts)) * 1e9
     assert gaps.min() >= 12.0
+
+
+def test_camera_foregrounds_stay_clear(house, landscape):
+    """Trees, shrubs and rocks keep out of the wedge between an eye-level
+    camera and the building; grass (no spacing) does not."""
+    site = house["site"]
+    T = landscape.Terrain(site)
+    cam, tgt = (T.cx + 40.0, T.cy), (T.cx, T.cy)
+    views = [(cam, tgt, 12.0)]
+    shrub = {"count": 30, "near_m": 3.0, "far_m": 40.0, "spacing_m": 2.0}
+    pts = landscape.scatter(T, shrub, 5, views)
+    assert len(pts) == 30 and not landscape.in_view(pts[:, 0], pts[:, 1], views).any()
+    # the wedge is narrow at the camera and wide at the building
+    assert landscape.in_view(np.array([T.cx + 38.0, T.cx + 5.0]), np.array([T.cy + 1.0, T.cy + 12.0]), views).all()
+    assert not landscape.in_view(np.array([T.cx + 38.0, T.cx + 50.0]), np.array([T.cy + 4.0, T.cy]), views).any()
+    grass = {"count": 400, "near_m": 3.0, "far_m": 40.0, "spacing_m": 0.0}
+    g = landscape.scatter(T, grass, 5, views)
+    assert landscape.in_view(g[:, 0], g[:, 1], views).any()
+
+
+def test_ground_cover_thins_toward_its_far_edge(house, landscape):
+    T = landscape.Terrain(house["site"])
+    grass = {"count": 3000, "near_m": 2.0, "far_m": 40.0, "spacing_m": 0.0}
+    g = landscape.scatter(T, grass, 9)
+    d = landscape._seg_distance(g[:, 0], g[:, 1], house["site"]["outline"])
+    inner, outer = ((d >= 2) & (d < 21)).sum(), ((d >= 30) & (d <= 40)).sum()
+    assert inner > 1000 and outer < inner * 0.25
+
+
+def test_texture_search_noise_is_counted_not_kept():
+    from architectworks.cli import quiet_texture_search
+
+    text = "a\nFailed to open dir (x): /y\nb\nFailed to open dir (x): /z"
+    assert quiet_texture_search(text).splitlines() == ["a", "b", "(2 'Failed to open dir' lines from the FBX importer's texture search left out)"]
+    assert quiet_texture_search("a\nb") == "a\nb"

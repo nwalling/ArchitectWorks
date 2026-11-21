@@ -70,7 +70,7 @@ def resolve_site(spec: BuildingSpec, footprints: list) -> dict[str, Any] | None:
             "ground": spec.types.materials[t.ground].unreal,
         },
         "planting": [
-            {"polyhaven": p.polyhaven, "count": p.count, "near_m": to_metres(p.near), "far_m": to_metres(p.far), "scale": list(p.scale), "spacing_m": to_metres(p.spacing)}
+            {"polyhaven": p.polyhaven, "count": p.count, "near_m": to_metres(p.near), "far_m": to_metres(p.far), "scale": list(p.scale), "spacing_m": to_metres(p.spacing), "controls": dict(p.controls)}
             for p in site.planting
         ],
         "outline": rings,
