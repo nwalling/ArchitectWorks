@@ -145,9 +145,14 @@ def test_terrain_pad_and_planting_bands(house, landscape):
     pad = site["terrain"]["pad_m"]
     on_pad = (d > 0.2) & (d < pad - 0.2)
     assert on_pad.sum() > 100 and np.allclose(Z[on_pad], site["grade_m"])
-    # under the building the ground drops below the sunken music room's slab
-    under = d < -0.5
+    # under the building the ground drops below the sunken music room's slab,
+    # but not until 0.3 m inside the footprints (the outline is 0.3 m out)
+    under = d < -T.UNDER
     assert under.sum() > 100 and Z[under].max() < -0.61
+    assert np.allclose(Z[(d > -T.UNDER + 0.05) & (d < 0.2)], site["grade_m"])
+    # and the grid is fine enough there that the slope between stays inside
+    xs, _ = T.grid()
+    assert np.diff(xs[np.abs(xs - T.cx) < T.R0]).max() <= T.UNDER - 0.3 + 1e-9
     # beyond the pad it eases into the terrain
     assert np.abs(Z[d > pad + site["terrain"]["blend_m"]] - site["grade_m"]).max() > 0.05
     # scattered plants keep to their band and their spacing

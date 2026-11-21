@@ -76,13 +76,23 @@ class Terrain:
         hills = t["hills_m"] * _smoothstep(0.7 * E, 2.2 * E, r) * (0.6 + 0.4 * sum(np.sin(kx * X + ky * Y + ph) for kx, ky, ph in self.hill_waves) / len(self.hill_waves))
         w = _smoothstep(t["pad_m"], t["pad_m"] + t["blend_m"], d)
         z = s["grade_m"] + w * (base + noise + hills)
-        return np.where(d < -0.35, s["grade_m"] - 0.75, z)
+        # under the floors (and the sunken music room) the ground drops away;
+        # the outline is 0.3 m outside the footprints, so the drop starts
+        # 0.3 m inside them and the slope down stays hidden under the floors
+        return np.where(d < -self.UNDER, s["grade_m"] - 0.75, z)
+
+    UNDER = 0.6  # m inside the outline where the ground drops
+    FINE = 0.2  # m grid spacing round the building
 
     def grid(self):
+        """Grid lines: FINE round the building so the drop under it stays
+        under it, 1 m out to the extent, then widening to the hills."""
         E = self.t["extent_m"]
-        near = np.arange(-E, E + 1e-6, 1.0)
+        F = self.R0 + 6.0
+        fine = np.arange(-F, F + 1e-6, self.FINE)
+        mid = np.arange(np.ceil(F), E + 1e-6, 1.0)
         far = np.geomspace(E + 8.0, 6 * E, 28)
-        axis = np.concatenate([-far[::-1], near, far])
+        axis = np.concatenate([-far[::-1], -mid[::-1], fine, mid, far])
         return self.cx + axis, self.cy + axis
 
 
